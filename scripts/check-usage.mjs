@@ -303,7 +303,7 @@ if (process.argv.includes("--live")) {
       /3 stored bots/
     )
     console.log(
-      "Live Neon checks passed: concurrent quota admission, idempotent settlement, period reset, expired-period denial, one sandbox, reconnect reuse, and bot cap."
+      "Live PostgreSQL checks passed: concurrent quota admission, idempotent settlement, period reset, expired-period denial, one sandbox, reconnect reuse, and bot cap."
     )
   } finally {
     await pool.query("DELETE FROM usage_ledger WHERE user_id=$1", [userId])

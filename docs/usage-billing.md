@@ -31,7 +31,7 @@ If stop delivery/provider operations fail, Daytona destroys the sandbox and its 
 2. Keep `DATABASE_URL`, `CLERK_SECRET_KEY`, and `DAYTONA_API_KEY` in the matching Next.js/Trigger environments; the chat worker also needs `DEEPSEEK_API_KEY`. Preserve environment-specific Trigger secret keys. Do not mix development and production Clerk instances.
 3. Run the Trigger development worker when testing locally. Deploy `chat-agent`, `stop-sandbox-lease`, and `sweep-sandbox-leases` together for production. Existing chat sessions need the new worker version before this enforcement covers them. No production deployment is implied by local validation.
 4. Verify the scheduled stopper and sweep are active in the intended Trigger environment. The hard TTL is the fallback if they cannot run.
-5. Run `node scripts/check-usage.mjs` for provider-boundary checks. `node scripts/check-usage.mjs --live` also checks Neon concurrency, settlement, period separation, reconnects and bot limits using only uniquely named test rows, then removes those rows.
+5. Run `node scripts/check-usage.mjs` for provider-boundary checks. `node scripts/check-usage.mjs --live` also checks PostgreSQL concurrency, settlement, period separation, reconnects and bot limits using only uniquely named test rows, then removes those rows.
 6. Review rates before changing the provider model, sandbox geometry, or prices. No user-controlled values set rates, allowance amounts, resource IDs, or billing periods.
 
 The Usage page is `/usage`, exposed through `AccountButton` using Clerk's supported `UserButton.Link`. It shows reserved-inclusive progress, token counts, bot slots, and time until the verified period end in MYT. Refreshing the page fetches current totals.

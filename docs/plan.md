@@ -18,7 +18,7 @@ As of 2026-10-26:
 - A Node.js 24 multi-stage image, standalone Next.js output, Compose web service, `/healthz`, named cache volume, and configuration/setup documentation are implemented.
 - Vercel's pool lifecycle hook was removed for the long-running Node server. Reference Sentry DSNs were replaced with optional environment configuration, preserving telemetry filtering.
 - OrbStack context `orbstack`, Docker 29.8.2, Compose v5.5.0, and ARM64 daemon connectivity were verified. The production image builds and the Compose web container becomes healthy with placeholder credentials.
-- Clerk/Clerk Billing, Neon, Trigger.dev Cloud, DeepSeek, Daytona, and optional Sentry remain external. Other migration branches remain planned; no service replacement or production deployment is claimed.
+- Database migration is implemented on `migration/database-postgresql`: local PostgreSQL replaces Neon configuration; verification is recorded below. Clerk/Clerk Billing, Trigger.dev Cloud, DeepSeek, Daytona, and optional Sentry remain external. No production deployment is claimed.
 
 ## Stack and branch mapping
 
@@ -50,7 +50,7 @@ Implement each service on its named branch when authorized. Integrate completed 
 
 - [x] Root application builds with existing open-source libraries retained.
 - [ ] One Compose command builds and starts the documented service set after configuration, including required worker deployment/bootstrap steps.
-- [ ] PostgreSQL readiness, schema initialization, persistence across restarts, and backup/restore are checked.
+- [x] PostgreSQL readiness, schema initialization, persistence across restarts, and backup/restore are checked.
 - [ ] Sign-up, sign-in, sign-out, expired sessions, and cross-user access denial work.
 - [ ] Subscription changes and billing events update web and worker entitlements safely; duplicate events are handled.
 - [ ] Individual and group chats stream; tool calls, handoffs, retries, and worker restarts behave correctly.
@@ -85,3 +85,18 @@ Implement each service on its named branch when authorized. Integrate completed 
 - Database/schema initialization and Trigger worker deployment are separate documented prerequisites. Compose currently starts only the web service.
 - Login, ownership denial, subscriptions, streaming/tool execution, sandbox/desktop access, external data persistence, and telemetry delivery remain unverified.
 - Remaining migration layers are **planned; branches prepared**. Overall completion requires the integrated acceptance checks above.
+
+### Database — implemented; locally verified
+
+- Branch: `migration/database-postgresql`, recreated from current `main` because the prepared branch had no unique commits and lacked the foundation.
+- Implemented: PostgreSQL 18 Compose service, health-gated startup, private networking, named data volume, explicit Drizzle schema tools, one `DATABASE_URL`, and backup/restore instructions. Drizzle, `pg`, application queries, worker storage and ownership/usage logic are retained.
+- Removed: unused Neon configuration and its two direct dependencies. No existing Neon data was imported or modified.
+- Passed: host typecheck, focused ESLint, deployment handler, bot, chat-query, group-chat and AI-chat checks (provider boundaries stubbed). Full lint retains the existing 17 errors and 10 warnings in unchanged components.
+- Passed on OrbStack context `orbstack`, Docker 29.8.2: healthy PostgreSQL 18, initial schema push, repeat push with no changes, rollback-only schema writes/unique-member/cascade checks, and live usage concurrency/idempotency/period/lease/bot-limit tests.
+- Passed: a test row survived forced container recreation; custom-format `pg_dump` restored into a separate empty `mochi_restore_check` database, retained its test row, and passed the same schema/constraint check. The source test row was removed; original database and restore database remain in the named volume.
+- Passed: production web and PostgreSQL containers became healthy; the built web runtime queried the local database. Test containers were stopped afterward, retaining named volumes and ignored `.env`.
+- Node.js 24 schema-tools and production web images build successfully. Image installation still reports 31 dependency vulnerabilities (7 low, 11 moderate, 13 high); no dependency security audit or upgrades were included.
+- Trigger.dev Cloud cannot resolve the private Compose hostname. Live agent execution requires securely connected workers and remains unverified; self-hosting is assigned to its own branch.
+- Delivery is tracked in Git history; no production deployment. A generated local database password and placeholder Clerk public key are in ignored `.env`; supply real external provider credentials before application use.
+
+- Reverified 2026-10-27 before delivery: typecheck, focused lint, bot/chat regressions, both image builds, healthy Compose startup, no-op schema push, live schema/usage checks, restored-database checks, and a query from the web runtime all passed. Full lint still reports only the recorded 17 errors and 10 warnings in unchanged components.
