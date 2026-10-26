@@ -13,14 +13,15 @@ GPU or model download is required in this phase; inference remains external.
 
 ```sh
 cp .env.example .env
-# Set POSTGRES_PASSWORD (openssl rand -hex 32) and provider credentials.
+# Set POSTGRES_PASSWORD and BETTER_AUTH_SECRET (separate openssl rand -hex 32 values).
+# Set BETTER_AUTH_URL to the browser-facing origin and provider credentials.
 # Initialize a fresh database first; review any proposed changes:
 docker compose up -d --wait postgres
 docker compose run --rm db-tools
 docker compose up -d --build
 ```
 
-Open http://localhost:3000. Set `WEB_PORT` in `.env` to change the host port.
+Open http://localhost:3000. Set `WEB_PORT` and matching `BETTER_AUTH_URL` in `.env` to change the host port.
 The port binds to loopback; configure a TLS reverse proxy before remote access.
 The Node.js 24 runtime runs as a non-root user. Compose supplies a private service
 network and a named `next-cache` volume for the Next.js cache. PostgreSQL data lives in the named `postgres-data` volume; sandbox data remains
@@ -29,8 +30,9 @@ do not use `down -v` unless you intend to delete them.
 
 Required external services in this phase:
 
-- **Clerk**: publishable and secret keys from the same instance; configure localhost
-  login/redirect origins and the existing `pro` subscription plan for paid features.
+- **Clerk Billing (temporary)**: `CLERK_SECRET_KEY` is needed only for operator-linked
+  legacy paid accounts. Authentication is local Better Auth; see [auth setup](docs/auth.md).
+  New accounts are unpaid until the Lago migration.
 - **Trigger.dev Cloud**: `TRIGGER_SECRET_KEY` and a separately deployed worker.
   Replace the reference project ID in `trigger.config.ts` with your own. Deploy with
   `npx trigger.dev@4.8.1 deploy`; configure `DATABASE_URL`, `CLERK_SECRET_KEY`,
@@ -43,8 +45,8 @@ Required external services in this phase:
   Blank DSNs disable event delivery. Source-map uploads are not configured in Docker;
   update reference organization/project settings before enabling uploads elsewhere.
 
-Keep secrets in ignored `.env`. Only the public Clerk key and optional public Sentry
-DSN are build arguments; changing them requires rebuilding the image. Server secrets
+Keep secrets in ignored `.env`. Only the optional public Sentry
+DSN is a build argument; changing it requires rebuilding the image. Server secrets
 are runtime environment values and are excluded from the build context.
 
 ## Checks

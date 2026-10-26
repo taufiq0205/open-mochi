@@ -1,8 +1,8 @@
 "use server"
 
 import { logger } from "@sentry/core"
-import { auth } from "@clerk/nextjs/server"
-import { BILLING_ERROR, PAID_PLAN } from "@/lib/billing"
+import { getAccess } from "@/lib/session"
+import { BILLING_ERROR } from "@/lib/billing"
 import { and, eq, inArray, notInArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -15,8 +15,8 @@ import {
 } from "@/lib/db/schema"
 
 export async function createGroupChat(input: unknown) {
-  const { userId, has } = await auth.protect()
-  if (!has(PAID_PLAN)) return { error: BILLING_ERROR }
+  const { userId, paid } = await getAccess()
+  if (!paid) return { error: BILLING_ERROR }
   const parsed = createGroupChatSchema.safeParse(input)
   if (!parsed.success)
     return { error: "Enter a name and pick at least two bots." }
@@ -56,8 +56,8 @@ export async function createGroupChat(input: unknown) {
 const groupIdSchema = z.string().trim().min(1).max(100)
 
 export async function updateGroupChat(chatId: unknown, input: unknown) {
-  const { userId, has } = await auth.protect()
-  if (!has(PAID_PLAN)) return { error: BILLING_ERROR }
+  const { userId, paid } = await getAccess()
+  if (!paid) return { error: BILLING_ERROR }
   const id = groupIdSchema.safeParse(chatId)
   const parsed = createGroupChatSchema.safeParse(input)
   if (!id.success || !parsed.success)
@@ -110,8 +110,8 @@ export async function updateGroupChat(chatId: unknown, input: unknown) {
 }
 
 export async function deleteGroupChat(chatId: unknown) {
-  const { userId, has } = await auth.protect()
-  if (!has(PAID_PLAN)) return { error: BILLING_ERROR }
+  const { userId, paid } = await getAccess()
+  if (!paid) return { error: BILLING_ERROR }
   const id = groupIdSchema.safeParse(chatId)
   if (!id.success)
     return { error: "Invalid group. Refresh the page and try again." }

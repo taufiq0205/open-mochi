@@ -1,8 +1,8 @@
 "use client"
 
-import { useAuth } from "@clerk/nextjs"
+import { useEntitlement } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
-import { BILLING_ERROR, PAID_PLAN } from "@/lib/billing"
+import { BILLING_ERROR } from "@/lib/billing"
 import { showUpgradeToast, showUsageToast } from "@/components/upgrade-toast"
 
 import { useState, useTransition, type ReactNode } from "react"
@@ -86,7 +86,7 @@ export function BotDialog({
   bot?: CreateBotInput & { id: string }
 }) {
   const [open, setOpen] = useState(false)
-  const { has } = useAuth()
+  const { paid } = useEntitlement()
   const router = useRouter()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string>()
@@ -101,7 +101,7 @@ export function BotDialog({
   })
 
   function onDelete() {
-    if (!has?.(PAID_PLAN)) return showUpgradeToast()
+    if (!paid) return showUpgradeToast()
     if (!bot) return
     setDeleteError(undefined)
     startTransition(async () => {
@@ -126,7 +126,7 @@ export function BotDialog({
   }
 
   function onSubmit(values: CreateBotInput) {
-    if (!has?.(PAID_PLAN)) return showUpgradeToast()
+    if (!paid) return showUpgradeToast()
     form.clearErrors("root")
     startTransition(async () => {
       try {
@@ -160,7 +160,7 @@ export function BotDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (pending) return
-        if (nextOpen && !has?.(PAID_PLAN)) return showUpgradeToast()
+        if (nextOpen && !paid) return showUpgradeToast()
         form.reset(bot ?? { ...defaults, avatar: crypto.randomUUID() })
         setOpen(nextOpen)
       }}

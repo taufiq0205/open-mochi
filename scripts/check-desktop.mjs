@@ -35,12 +35,10 @@ const calls = []
 const { connectDesktop } = load("../actions/desktop.ts", {
   zod: { z },
   "@/lib/billing": billing,
-  "@clerk/nextjs/server": {
-    auth: {
-      protect: async () => {
-        if (!authenticated) throw new Error("Unauthorized")
-        return { userId: "user_1", has: () => paid }
-      },
+  "@/lib/session": {
+    getAccess: async () => {
+      if (!authenticated) throw new Error("Unauthorized")
+      return { userId: "user_1", paid }
     },
   },
   "@/queries/chats": {
@@ -122,7 +120,7 @@ const originalDocument = globalThis.document
 globalThis.document = { createElement: () => host }
 const pass = () => null
 const { SandboxDesktop } = load("../components/sandbox-desktop.tsx", {
-  "@clerk/nextjs": { useAuth: () => ({ has: () => paid }) },
+  "@/lib/auth-client": { useEntitlement: () => ({ paid }) },
   "@/lib/billing": billing,
   "@/components/upgrade-toast": { showUpgradeToast() {} },
   "react/jsx-runtime": jsx,

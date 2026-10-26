@@ -10,12 +10,10 @@ let selects = 0
 const mock = drizzle.mock()
 const dependencies = {
   "server-only": {},
-  "@clerk/nextjs/server": {
-    auth: {
-      protect: async () => {
-        if (!authenticated) throw new Error("Unauthorized")
-        return { userId: "user_1" }
-      },
+  "@/lib/session": {
+    requireSession: async () => {
+      if (!authenticated) throw new Error("Unauthorized")
+      return { userId: "user_1" }
     },
   },
   "drizzle-orm": orm,

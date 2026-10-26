@@ -2,8 +2,8 @@
 
 import { logger } from "@sentry/core"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useAuth } from "@clerk/nextjs"
-import { BILLING_ERROR, PAID_PLAN } from "@/lib/billing"
+import { useEntitlement } from "@/lib/auth-client"
+import { BILLING_ERROR } from "@/lib/billing"
 import { showUpgradeToast, showUsageToast } from "@/components/upgrade-toast"
 import type RFB from "@novnc/novnc"
 
@@ -25,8 +25,7 @@ export function SandboxDesktop({
   chatId: string
   name: string
 }) {
-  const { has } = useAuth()
-  const paid = has?.(PAID_PLAN) ?? false
+  const { paid } = useEntitlement()
   const preview = useRef<HTMLDivElement>(null)
   const fullscreenTarget = useRef<HTMLDivElement | null>(null)
   const screen = useRef<HTMLDivElement | null>(null)

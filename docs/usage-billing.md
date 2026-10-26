@@ -1,3 +1,5 @@
+> Authentication now uses Better Auth. Clerk references below describe the temporary billing backend; see [auth setup](auth.md). Checkout and Clerk account menus are unavailable pending Lago migration.
+
 # Subscription-period usage
 
 Pro remains USD 20/month. Clerk is the source of subscription status and period start/end; there is no calendar-month approximation, top-up wallet, or automatic overage charge. A missing/unverifiable period denies provider usage.

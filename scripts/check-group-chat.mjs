@@ -61,12 +61,10 @@ const { createGroupChat, updateGroupChat, deleteGroupChat } = load(
   "../actions/group-chat.ts",
   {
     "@/lib/billing": billing,
-    "@clerk/nextjs/server": {
-      auth: {
-        protect: async () => {
-          if (!authenticated) throw new Error("Unauthorized")
-          return { userId: "user_1", has: () => paid }
-        },
+    "@/lib/session": {
+      getAccess: async () => {
+        if (!authenticated) throw new Error("Unauthorized")
+        return { userId: "user_1", paid }
       },
     },
     "drizzle-orm": orm,

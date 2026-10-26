@@ -1,8 +1,7 @@
-import { PricingTable } from "@clerk/nextjs"
-import { auth } from "@clerk/nextjs/server"
+import { requireSession } from "@/lib/session"
 
 export default async function PricingPage() {
-  await auth.protect()
+  await requireSession()
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 p-6">
@@ -15,7 +14,10 @@ export default async function PricingPage() {
           sandboxes.
         </p>
       </div>
-      <PricingTable for="user" newSubscriptionRedirectUrl="/" />
+      <p>
+        Subscription checkout will be available after the Lago migration.
+        Existing subscriptions require an operator-verified account link.
+      </p>
     </main>
   )
 }

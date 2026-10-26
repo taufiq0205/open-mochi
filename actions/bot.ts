@@ -2,8 +2,8 @@
 
 import { logger } from "@sentry/core"
 import { and, eq, notExists, sql } from "drizzle-orm"
-import { auth } from "@clerk/nextjs/server"
-import { BILLING_ERROR, PAID_PLAN } from "@/lib/billing"
+import { getAccess } from "@/lib/session"
+import { BILLING_ERROR } from "@/lib/billing"
 import { revalidatePath } from "next/cache"
 import { DaytonaNotFoundError, type Sandbox } from "@daytona/sdk"
 
@@ -28,8 +28,8 @@ import {
 } from "@/lib/db/schema"
 
 export async function createBot(input: unknown) {
-  const { userId, has } = await auth.protect()
-  if (!has(PAID_PLAN)) return { error: BILLING_ERROR }
+  const { userId, paid } = await getAccess()
+  if (!paid) return { error: BILLING_ERROR }
   const parsed = createBotSchema.safeParse(input)
   if (!parsed.success) {
     return { error: "Check the bot details and try again." }
@@ -106,8 +106,8 @@ export async function createBot(input: unknown) {
 }
 
 export async function updateBot(botId: unknown, input: unknown) {
-  const { userId, has } = await auth.protect()
-  if (!has(PAID_PLAN)) return { error: BILLING_ERROR }
+  const { userId, paid } = await getAccess()
+  if (!paid) return { error: BILLING_ERROR }
   const id = insertBotSchema.shape.id.unwrap().safeParse(botId)
   const parsed = createBotSchema.safeParse(input)
   if (!id.success || !id.data || !parsed.success) {
@@ -132,8 +132,8 @@ export async function updateBot(botId: unknown, input: unknown) {
 }
 
 export async function deleteBot(botId: unknown) {
-  const { userId, has } = await auth.protect()
-  if (!has(PAID_PLAN)) return { error: BILLING_ERROR }
+  const { userId, paid } = await getAccess()
+  if (!paid) return { error: BILLING_ERROR }
   const id = insertBotSchema.shape.id.unwrap().safeParse(botId)
   if (!id.success || !id.data)
     return { error: "Invalid bot. Refresh the page and try again." }

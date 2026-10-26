@@ -32,7 +32,7 @@ assert.equal(
 )
 assert.equal(schema.insertBotSchema.safeParse(valid).success, false)
 
-// Run the real action with Clerk and database boundaries stubbed.
+// Run the real action with session and database boundaries stubbed.
 let sandboxFailure
 let commitFailure = false
 const sandboxCalls = []
@@ -121,12 +121,10 @@ const dependencies = {
   },
   "drizzle-orm": orm,
   "@/lib/billing": billing,
-  "@clerk/nextjs/server": {
-    auth: {
-      protect: async () => {
-        if (!authenticated) throw new Error("Unauthorized")
-        return { userId: "user_1", has: () => paid }
-      },
+  "@/lib/session": {
+    getAccess: async () => {
+      if (!authenticated) throw new Error("Unauthorized")
+      return { userId: "user_1", paid }
     },
   },
   "next/cache": { revalidatePath: (...args) => paths.push(args) },

@@ -10,7 +10,7 @@ docker compose up -d --build
 
 Preserve Mochi's individual and group chats, bot instructions and avatars, agent tool execution, sandbox memory, browser desktop access, authorization, and usage controls.
 
-As of 2026-10-26:
+As of 2026-10-27:
 
 - Deployment foundation is implemented and locally verified on `migration/deployment-docker-compose`; integration and remote delivery are tracked in Git history.
 - Application source was copied into the root from reference commit `82c4cf0d8ad087400ec44cbf4b19afcd25ac9c67`; `reference/mochi/` remains untouched and ignored. Nested Git metadata, agent configuration, secrets, dependencies, and generated output were excluded.
@@ -18,7 +18,7 @@ As of 2026-10-26:
 - A Node.js 24 multi-stage image, standalone Next.js output, Compose web service, `/healthz`, named cache volume, and configuration/setup documentation are implemented.
 - Vercel's pool lifecycle hook was removed for the long-running Node server. Reference Sentry DSNs were replaced with optional environment configuration, preserving telemetry filtering.
 - OrbStack context `orbstack`, Docker 29.8.2, Compose v5.5.0, and ARM64 daemon connectivity were verified. The production image builds and the Compose web container becomes healthy with placeholder credentials.
-- Database migration is implemented on `migration/database-postgresql`: local PostgreSQL replaces Neon configuration; verification is recorded below. Clerk/Clerk Billing, Trigger.dev Cloud, DeepSeek, Daytona, and optional Sentry remain external. No production deployment is claimed.
+- Database migration is implemented on `migration/database-postgresql`: local PostgreSQL replaces Neon configuration; verification is recorded below. Better Auth is implemented locally on `migration/auth-better-auth`; Clerk Billing, Trigger.dev Cloud, DeepSeek, Daytona, and optional Sentry remain external. No production deployment is claimed.
 
 ## Stack and branch mapping
 
@@ -51,7 +51,7 @@ Implement each service on its named branch when authorized. Integrate completed 
 - [x] Root application builds with existing open-source libraries retained.
 - [ ] One Compose command builds and starts the documented service set after configuration, including required worker deployment/bootstrap steps.
 - [x] PostgreSQL readiness, schema initialization, persistence across restarts, and backup/restore are checked.
-- [ ] Sign-up, sign-in, sign-out, expired sessions, and cross-user access denial work.
+- [x] Sign-up, sign-in, sign-out, expired sessions, and cross-user access denial work (local HTTP checks; see auth progress).
 - [ ] Subscription changes and billing events update web and worker entitlements safely; duplicate events are handled.
 - [ ] Individual and group chats stream; tool calls, handoffs, retries, and worker restarts behave correctly.
 - [ ] Sandbox shell/files, bot memory, desktop authentication, user isolation, expiry, and cleanup are verified.
@@ -100,3 +100,29 @@ Implement each service on its named branch when authorized. Integrate completed 
 - Delivery is tracked in Git history; no production deployment. A generated local database password and placeholder Clerk public key are in ignored `.env`; supply real external provider credentials before application use.
 
 - Reverified 2026-10-27 before delivery: typecheck, focused lint, bot/chat regressions, both image builds, healthy Compose startup, no-op schema push, live schema/usage checks, restored-database checks, and a query from the web runtime all passed. Full lint still reports only the recorded 17 errors and 10 warnings in unchanged components.
+
+### Authentication — implemented; locally verified 2026-10-27
+
+- Branch: `migration/auth-better-auth`, recreated from current `main`; the prepared branch had no unique commits. Delivery is tracked in Git history.
+- Implemented Better Auth 1.7.13 with email/password login, PostgreSQL/Drizzle auth tables, database-backed sessions without cookie caching, signup/signin forms, sidebar logout, and a same-origin auth API. Removed Clerk login UI, middleware, public configuration and frontend packages; retained existing UI libraries.
+- Web actions and queries use trusted Better Auth session IDs and retain ownership filters, validation, scoped Trigger tokens and usage limits. Worker paid checks now require an existing local auth user and an operator-verified legacy billing identity. No browser-supplied ID or email-based ownership linking is accepted.
+- Transitional billing: only `@clerk/backend` remains for existing subscription checks, via unique server-owned `auth_user.clerk_user_id`. New accounts are unpaid. Checkout is unavailable until Lago integration; no users, credentials, sessions, ownership records or subscriptions were automatically migrated. See [auth setup and identity boundary](auth.md).
+- Passed: host typecheck, focused ESLint, auth/session/billing checks, existing bot/chat-query/group-chat/chat/desktop/AI-chat/Sentry/deployment regressions (provider boundaries stubbed). Full lint retains the recorded 17 errors and 10 warnings in unchanged components.
+- Passed on OrbStack context `orbstack`, Docker 29.8.2: additive auth schema push, repeat push with no changes, existing rollback-only database schema checks, Node.js 24 production image build and healthy web/PostgreSQL startup. Build uses a disposable process-only signing key; the stable runtime key is supplied from ignored `.env`.
+- Passed against the running production web container: real signup and password signin, authenticated dashboard, signout/revoked session, database-expired session rejection, signed-out redirects, untrusted-origin rejection, denied signup/update attempts to set the billing link, unpaid entitlement checks, and cross-user chat not-found rendering. Temporary test users and their fixture records were removed. Next.js may stream a not-found boundary with HTTP 200, so denial checks inspect the rendered boundary.
+- Browser verification after skill-guided rework: successful desktop signin/logout, mobile signup, generic incorrect-credential feedback, password visibility, and responsive 390px layout passed using disposable local accounts; accounts were removed.
+- Local random `BETTER_AUTH_SECRET` and localhost origin were added to ignored `.env`. Existing PostgreSQL and cache volumes were preserved. No production deployment or live paid worker/provider execution is claimed.
+- Remaining: Lago entitlements/checkout, any reviewed legacy account/data transfer, mail verification/recovery, OAuth/MFA, and external worker/inference/sandbox/telemetry acceptance. npm still reports 31 dependency vulnerabilities (7 low, 11 moderate, 13 high); dependency remediation is outside this migration.
+
+#### Better Auth skill-guided rework — locally verified 2026-10-27
+
+- Used repository Better Auth integration, security and email/password skills with official 1.7 documentation matching installed 1.7.13.
+- Replaced Clerk-shaped session/permission APIs with `requireSession`, `getAccess`, and `useEntitlement`; identity-only queries no longer call billing. Paid actions and worker checks retain server-enforced entitlements and ownership.
+- Added `nextCookies`, app name, explicit 12–128 password limits and rate limiting in every environment. Kept origin/CSRF/cookie defaults, database session validation and server-owned billing links. Signed-in visitors skip auth pages. No new dependency or database change.
+- Redesigned shared signin/signup UI using existing components: desktop split layout, mobile form, password visibility, duplicate-submit guard, generic errors, rate-limit/network feedback and accessible pending states.
+- Passed: typecheck, focused lint, auth/session/billing tests, bot/chat-query/group/chat/desktop/AI-chat regressions, production image build, healthy Compose startup, expanded live password policy/cookie/redirect checks and existing expiry/spoofing/origin/cross-user checks. Session regression specifically verifies identity reads do not call billing during provider failure.
+- Unchanged limits: temporary Clerk Billing bridge, unpaid new users, no mail verification/recovery or live paid worker/provider acceptance. In-memory rate limits suit one web process and reset on restart; shared storage/trusted proxy configuration remains a deployment prerequisite for multiple replicas.
+
+- Branding update: reused the supplied artwork from `docs/mochi-icon.png` for signin/signup marks and `app/icon.png`, replacing the old favicon. Transparent 512px asset, typecheck, focused lint, production image/healthy startup, browser appearance and live icon metadata/response were verified locally. Delivery is tracked in Git history.
+
+- Auth reverified after the icon update (2026-10-27): `npm run auth:check`, `npm run auth:live`, public-page/signed-out redirect smoke checks, and bot/chat-query/group-chat/chat/desktop authorization regressions passed. Live checks used the healthy OrbStack Compose web/PostgreSQL stack and cleaned up disposable accounts/fixtures. Full browser interaction was not repeated in this run.
