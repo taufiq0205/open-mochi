@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { auth } from "@clerk/nextjs/server"
+import { requireSession } from "@/lib/session"
 import { BILLING_ERROR } from "@/lib/billing"
 import { getUsagePeriod, getUsageSummary } from "@/lib/usage"
 import { BOT_LIMIT, USAGE_LIMIT } from "@/lib/usage-policy"
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card"
 
 export default async function UsagePage() {
-  const { userId } = await auth.protect()
+  const { userId } = await requireSession()
   let period
   try {
     period = await getUsagePeriod(userId)

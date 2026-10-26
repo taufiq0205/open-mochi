@@ -1,6 +1,6 @@
 import "server-only"
 
-import { auth } from "@clerk/nextjs/server"
+import { requireSession } from "@/lib/session"
 import { and, asc, desc, eq, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
@@ -16,7 +16,7 @@ const members = (userId: string) => sql<ChatBot[]>`coalesce((
 ), '[]'::jsonb)`
 
 export async function getUserBots() {
-  const { userId } = await auth.protect()
+  const { userId } = await requireSession()
   return db
     .select({ id: bots.id, name: bots.name, avatar: bots.avatar })
     .from(bots)
@@ -25,7 +25,7 @@ export async function getUserBots() {
 }
 
 export async function getUserChats() {
-  const { userId } = await auth.protect()
+  const { userId } = await requireSession()
   const firstBot = db
     .select({ name: bots.name, avatar: bots.avatar })
     .from(chatMembers)
@@ -53,7 +53,7 @@ export async function getUserChats() {
 }
 
 export async function getChat(chatId: string) {
-  const { userId } = await auth.protect()
+  const { userId } = await requireSession()
   const firstBot = db
     .select({
       id: bots.id,

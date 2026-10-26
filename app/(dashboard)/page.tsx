@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server"
+import { requireSession } from "@/lib/session"
 import { BotDialog } from "@/components/bot-dialog"
 import { ChatAvatar } from "@/components/chat-avatar"
 import {
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/empty"
 
 export default async function Page() {
-  await auth.protect()
+  await requireSession()
 
   return (
     <main className="flex min-h-svh items-center justify-center p-6">

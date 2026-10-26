@@ -1,7 +1,7 @@
 "use client"
 
-import { useAuth } from "@clerk/nextjs"
-import { BILLING_ERROR, PAID_PLAN } from "@/lib/billing"
+import { useEntitlement } from "@/lib/auth-client"
+import { BILLING_ERROR } from "@/lib/billing"
 import { showUpgradeToast } from "@/components/upgrade-toast"
 
 import { useState, useTransition, type ReactNode } from "react"
@@ -63,7 +63,7 @@ export function GroupChatDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { has } = useAuth()
+  const { paid } = useEntitlement()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string>()
   const [pending, startTransition] = useTransition()
@@ -74,7 +74,7 @@ export function GroupChatDialog({
   })
   const selected = useWatch({ control: form.control, name: "botIds" })
   function onDelete() {
-    if (!has?.(PAID_PLAN)) return showUpgradeToast()
+    if (!paid) return showUpgradeToast()
     if (!group) return
     setDeleteError(undefined)
     startTransition(async () => {
@@ -95,7 +95,7 @@ export function GroupChatDialog({
     })
   }
   function onSubmit(values: CreateGroupChatInput) {
-    if (!has?.(PAID_PLAN)) return showUpgradeToast()
+    if (!paid) return showUpgradeToast()
     form.clearErrors("root")
     startTransition(async () => {
       try {
@@ -127,7 +127,7 @@ export function GroupChatDialog({
       open={open}
       onOpenChange={(value) => {
         if (pending) return
-        if (value && !has?.(PAID_PLAN)) return showUpgradeToast()
+        if (value && !paid) return showUpgradeToast()
         setOpen(value)
         form.reset(group ?? { name: "", botIds: [] })
       }}

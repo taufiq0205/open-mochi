@@ -1,9 +1,8 @@
-import { SignUp } from "@clerk/nextjs"
+import { redirect } from "next/navigation"
+import { getSession } from "@/lib/session"
+import { AuthForm } from "@/components/auth-form"
 
-export default function SignUpPage() {
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <SignUp />
-    </div>
-  )
+export default async function Page() {
+  if (await getSession()) redirect("/")
+  return <AuthForm signUp />
 }

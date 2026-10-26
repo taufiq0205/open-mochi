@@ -6,13 +6,12 @@ RUN npm ci
 
 FROM dependencies AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
-ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SENTRY_DSN
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 COPY . .
-# Build-time route collection imports the database module; no connection is made.
-RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npm run build
+# Route collection initializes auth/database without connecting; this key exists only in the build process.
+RUN DATABASE_URL=postgresql://build:build@localhost:5432/build BETTER_AUTH_URL=http://localhost:3000 \
+    node -e "process.env.BETTER_AUTH_SECRET=require('node:crypto').randomBytes(32).toString('hex');require('node:child_process').execFileSync('npm',['run','build'],{stdio:'inherit',env:process.env})"
 
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app

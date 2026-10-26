@@ -1,8 +1,8 @@
 "use server"
 
 import { logger } from "@sentry/core"
-import { auth } from "@clerk/nextjs/server"
-import { BILLING_ERROR, PAID_PLAN } from "@/lib/billing"
+import { getAccess } from "@/lib/session"
+import { BILLING_ERROR } from "@/lib/billing"
 import { z } from "zod"
 
 import { getChat } from "@/queries/chats"
@@ -10,8 +10,8 @@ import { openMeteredSandbox } from "@/lib/metered-sandbox"
 import { UsageError } from "@/lib/usage-policy"
 
 export async function connectDesktop(chatId: unknown) {
-  const { userId, has } = await auth.protect()
-  if (!has(PAID_PLAN)) return { error: BILLING_ERROR }
+  const { userId, paid } = await getAccess()
+  if (!paid) return { error: BILLING_ERROR }
   const id = z.string().min(1).max(100).safeParse(chatId)
   if (!id.success) return { error: "Invalid chat. Refresh and try again." }
 

@@ -1,8 +1,8 @@
 "use client"
 
 import { logger } from "@sentry/core"
-import { useAuth } from "@clerk/nextjs"
-import { BILLING_ERROR, PAID_PLAN } from "@/lib/billing"
+import { useEntitlement } from "@/lib/auth-client"
+import { BILLING_ERROR } from "@/lib/billing"
 import { USAGE_ERROR } from "@/lib/usage-policy"
 import { showUpgradeToast, showUsageToast } from "@/components/upgrade-toast"
 import { useChat } from "@ai-sdk/react"
@@ -60,14 +60,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
 export function Chat(props: { chatId: string; members?: ChatBot[] }) {
-  const { has, isLoaded } = useAuth()
+  const { paid, isLoaded } = useEntitlement()
   if (!isLoaded)
     return (
       <p role="status" className="p-4">
         Loading chat…
       </p>
     )
-  if (!has?.(PAID_PLAN))
+  if (!paid)
     return (
       <div className="flex flex-col items-center gap-4 p-6">
         <p className="text-muted-foreground">

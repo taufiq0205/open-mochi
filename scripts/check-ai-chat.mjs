@@ -49,12 +49,10 @@ process.env.VERCEL_GIT_COMMIT_REF = "main"
 const actions = load("../actions/chat.ts", {
   zod: { z },
   "@/lib/billing": billing,
-  "@clerk/nextjs/server": {
-    auth: {
-      protect: async () => {
-        if (!authenticated) throw new Error("Unauthorized")
-        return { userId: "user_1", has: () => paid }
-      },
+  "@/lib/session": {
+    getAccess: async () => {
+      if (!authenticated) throw new Error("Unauthorized")
+      return { userId: "user_1", paid }
     },
   },
   "@/queries/chats": {
@@ -737,7 +735,7 @@ let finishStart
 let resumeCalls = 0
 const loadTranscript = async () => ({ messages: renderedMessages })
 const { Chat } = load("../components/chat.tsx", {
-  "@clerk/nextjs": { useAuth: () => ({ has: () => paid, isLoaded: true }) },
+  "@/lib/auth-client": { useEntitlement: () => ({ paid, isLoaded: true }) },
   "@/lib/billing": billing,
   "@/lib/usage-policy": usagePolicy,
   "@/components/upgrade-toast": { showUpgradeToast() {} },

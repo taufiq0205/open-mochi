@@ -1,7 +1,6 @@
 "use client"
 
-import { useAuth } from "@clerk/nextjs"
-import { PAID_PLAN } from "@/lib/billing"
+import { useEntitlement } from "@/lib/auth-client"
 import { showUpgradeToast } from "@/components/upgrade-toast"
 import { useState } from "react"
 import { PlusIcon, UsersIcon } from "lucide-react"
@@ -19,7 +18,7 @@ import {
 import type { ChatBot } from "@/queries/chats"
 
 export function CreateChatMenu({ bots }: { bots: ChatBot[] }) {
-  const { has } = useAuth()
+  const { paid } = useEntitlement()
   const [groupOpen, setGroupOpen] = useState(false)
   return (
     <div className="flex justify-end">
@@ -48,7 +47,7 @@ export function CreateChatMenu({ bots }: { bots: ChatBot[] }) {
               </DialogTrigger>
               <DropdownMenuItem
                 onClick={() => {
-                  if (!has?.(PAID_PLAN)) return showUpgradeToast()
+                  if (!paid) return showUpgradeToast()
                   setGroupOpen(true)
                 }}
               >
