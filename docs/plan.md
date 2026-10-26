@@ -12,11 +12,13 @@ Preserve Mochi's individual and group chats, bot instructions and avatars, agent
 
 As of 2026-10-26:
 
-- The root repository is initialized on `main` and connected to `https://github.com/taufiq0205/open-mochi.git`.
-- Original source is preserved at `reference/mochi/`, ignored by the root repository. Fresh clones require this reference to be supplied separately.
-- Eight local migration branches exist, all initially based on the same bootstrap commit. They contain no migration implementation and have not been pushed.
-- OrbStack Docker connectivity was verified with Docker 29.8.2 and Compose v5.5.0. No application image or stack has been built or tested.
-- The root contains documentation only; the application, Dockerfile, and Compose configuration remain to be implemented.
+- Deployment foundation is implemented and locally verified on `migration/deployment-docker-compose`; integration and remote delivery are tracked in Git history.
+- Application source was copied into the root from reference commit `82c4cf0d8ad087400ec44cbf4b19afcd25ac9c67`; `reference/mochi/` remains untouched and ignored. Nested Git metadata, agent configuration, secrets, dependencies, and generated output were excluded.
+- This branch originally predates the plan and instructions; `AGENTS.md` and this plan were restored from `main` before implementation.
+- A Node.js 24 multi-stage image, standalone Next.js output, Compose web service, `/healthz`, named cache volume, and configuration/setup documentation are implemented.
+- Vercel's pool lifecycle hook was removed for the long-running Node server. Reference Sentry DSNs were replaced with optional environment configuration, preserving telemetry filtering.
+- OrbStack context `orbstack`, Docker 29.8.2, Compose v5.5.0, and ARM64 daemon connectivity were verified. The production image builds and the Compose web container becomes healthy with placeholder credentials.
+- Clerk/Clerk Billing, Neon, Trigger.dev Cloud, DeepSeek, Daytona, and optional Sentry remain external. Other migration branches remain planned; no service replacement or production deployment is claimed.
 
 ## Stack and branch mapping
 
@@ -46,7 +48,7 @@ Implement each service on its named branch when authorized. Integrate completed 
 
 ## Completion checks
 
-- [ ] Root application builds with existing open-source libraries retained.
+- [x] Root application builds with existing open-source libraries retained.
 - [ ] One Compose command builds and starts the documented service set after configuration, including required worker deployment/bootstrap steps.
 - [ ] PostgreSQL readiness, schema initialization, persistence across restarts, and backup/restore are checked.
 - [ ] Sign-up, sign-in, sign-out, expired sessions, and cross-user access denial work.
@@ -69,4 +71,17 @@ Implement each service on its named branch when authorized. Integrate completed 
 
 ## Progress recording
 
-All migration layers are currently **planned; branches prepared**. For each completed layer, record the commit, checks performed, remaining external dependencies, and unverified behavior here. Mark the overall migration complete only after the integrated Compose acceptance checks pass.
+### Deployment foundation — implemented; local web startup verified
+
+- Implementation: `115e33e` (`Establish Docker Compose deployment foundation`) on `migration/deployment-docker-compose`; integrated into `main`.
+- Implemented: root source, Node.js 24 image, standalone web runtime as non-root, loopback port, Compose networking, restart policy, credential-free process health check, and persistent Next.js cache.
+- Passed: `npm run typecheck`; Node.js 24 production image via `npm run build`; `docker compose config --quiet`; `docker compose up -d --build --wait` using temporary non-live placeholders; HTTP 200/JSON from `/healthz` in the healthy container; non-root runtime and absence of `.env`, `.git`, and `reference/` in the image.
+- Passed: `npm run bot:check`, `npm run deployment:check`, and the existing Sentry, chat-query, group-chat, and AI-chat checks. Integration boundaries are stubbed; these are not live provider acceptance.
+- Changed application files pass focused ESLint. Full `npm run lint` fails with 17 errors and 10 warnings in unchanged reference components; the copied `components/` directory was compared against the reference and is identical.
+- npm's image install reports 31 dependency vulnerabilities (7 low, 11 moderate, 13 high); no dependency upgrades or detailed security audit were included in this foundation change.
+- Named `next-cache` persistence passed across forced container recreation. The temporary stack was stopped, placeholder `.env` removed, and named volume retained. No production deployment occurred.
+- Host checks used Node.js 22.22.3; the production build/type analysis and running container used Node.js 24.22.1. The Node.js 24 Docker image and built application were rechecked against the latest official LTS release on 2026-10-26: both use 24.22.1, including the [October security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). Host Node.js remains below the patched 22.23.4 release.
+- Configuration: copy `.env.example` to ignored `.env`; provide your own service accounts. Public Clerk/Sentry values are built into the image; server secrets are supplied only at runtime.
+- Database/schema initialization and Trigger worker deployment are separate documented prerequisites. Compose currently starts only the web service.
+- Login, ownership denial, subscriptions, streaming/tool execution, sandbox/desktop access, external data persistence, and telemetry delivery remain unverified.
+- Remaining migration layers are **planned; branches prepared**. Overall completion requires the integrated acceptance checks above.
