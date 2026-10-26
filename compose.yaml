@@ -1,5 +1,34 @@
 name: open-mochi
 services:
+  postgres:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_USER: mochi
+      POSTGRES_DB: mochi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mochi -d mochi"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  db-tools:
+    profiles: [tools]
+    build:
+      context: .
+      target: dependencies
+    environment:
+      DATABASE_URL: postgresql://mochi:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/mochi
+    volumes:
+      - ./lib:/app/lib:ro
+      - ./scripts:/app/scripts:ro
+      - ./drizzle.config.ts:/app/drizzle.config.ts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["npm", "run", "db:push"]
   web:
     build:
       context: .
@@ -7,7 +36,11 @@ services:
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?Set your Clerk publishable key in .env}
         NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
     env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
+      DATABASE_URL: postgresql://mochi:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/mochi
       NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
       NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
       NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /
@@ -25,4 +58,5 @@ services:
       start_period: 30s
       retries: 3
 volumes:
+  postgres-data:
   next-cache:
