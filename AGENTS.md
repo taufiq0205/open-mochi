@@ -13,6 +13,7 @@ Use `reference/mochi/` as the primary implementation reference. It is a local, i
 - Inspect the relevant reference code and every affected caller before implementing. Reuse its working patterns and preserve authentication, ownership checks, validation, usage limits, and error handling.
 - Use the smallest complete change. Keep libraries already open source unless a migration requires replacing them.
 - Inspect the current branch and working tree before edits. Creating or switching branches, merging, committing, and pushing require an explicit user request; existing migration branches do not authorize switching automatically.
+- For stack migration work, use the branch assigned in the **Stack and branch mapping** table in [docs/plan.md](docs/plan.md). Treat that table as authoritative. If the current branch differs, obtain explicit authorization to switch before editing; keep shared foundation work on `migration/deployment-docker-compose` and integrate dependent changes in the documented sequence.
 - Keep work uncommitted unless requested. Keep `reference/`, credentials, environment files, and generated artifacts out of commits.
 - Update migration status in `docs/plan.md` when implementation or verification changes it. Distinguish planned, implemented, locally verified, and deployed.
 
