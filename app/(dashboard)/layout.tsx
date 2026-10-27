@@ -1,3 +1,4 @@
+import "@/components/workspace.css"
 import { cookies } from "next/headers"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SidebarProvider } from "@/components/ui/sidebar"
@@ -10,7 +11,7 @@ export default async function DashboardLayout({
   const defaultOpen = (await cookies()).get("sidebar_state")?.value !== "false"
 
   return (
-    <SidebarProvider defaultOpen={defaultOpen}>
+    <SidebarProvider defaultOpen={defaultOpen} className="workspace">
       <AppSidebar />
       <div className="min-w-0 flex-1">{children}</div>
     </SidebarProvider>

@@ -3,7 +3,7 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { SidebarMenuButton } from "@/components/ui/sidebar"
+import { SidebarMenuButton, useSidebar } from "@/components/ui/sidebar"
 
 export function ChatSidebarButton({
   chatId,
@@ -14,13 +14,15 @@ export function ChatSidebarButton({
   name: string
   children: ReactNode
 }) {
+  const { setOpenMobile } = useSidebar()
   const href = `/chats/${chatId}`
   const isActive = usePathname() === href
 
   return (
     <SidebarMenuButton
+      onClick={() => setOpenMobile(false)}
       size="lg"
-      className="group-data-[collapsible=icon]:justify-center"
+      className="h-auto min-h-14 rounded-lg px-2.5 py-2.5 group-data-[collapsible=icon]:min-h-8 group-data-[collapsible=icon]:justify-center"
       aria-label={name}
       tooltip={name}
       isActive={isActive}

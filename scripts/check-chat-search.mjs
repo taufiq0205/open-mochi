@@ -8,6 +8,7 @@ let listener
 let cleanup
 let destination
 let sidebarState = "expanded"
+let mobileOpen = true
 const exports = {}
 const jsx = (type, props) => ({ type, props })
 const code = ts.transpileModule(
@@ -40,7 +41,15 @@ runInNewContext(code, {
       }
     if (name === "react/jsx-runtime") return { jsx, jsxs: jsx }
     if (name === "@/components/ui/sidebar")
-      return { useSidebar: () => ({ state: sidebarState, isMobile: false }) }
+      return {
+        useSidebar: () => ({
+          state: sidebarState,
+          isMobile: false,
+          setOpenMobile: (value) => {
+            mobileOpen = value
+          },
+        }),
+      }
     if (name === "next/navigation")
       return {
         useRouter: () => ({
@@ -98,6 +107,7 @@ const item =
     .props.children[0]
 item.props.onSelect()
 assert.equal(destination, "/chats/chat-123")
+assert.equal(mobileOpen, false)
 assert.equal(open, false)
 cleanup()
 assert.equal(listener, undefined)

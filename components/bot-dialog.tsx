@@ -172,26 +172,28 @@ export function BotDialog({
         </DialogTrigger>
       )}
       <DialogContent
-        className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl"
+        className="max-h-[calc(100svh-2rem)] gap-6 overflow-y-auto rounded-2xl border-border bg-card p-6 sm:max-w-lg sm:p-7"
         showCloseButton={!pending}
       >
         <DialogHeader>
-          <DialogTitle>{bot ? "Edit bot" : "New bot"}</DialogTitle>
+          <DialogTitle className="text-xl font-medium tracking-tight">
+            {bot ? "Edit bot" : "Create a bot"}
+          </DialogTitle>
           <DialogDescription>
             {bot
               ? "Update its face, name, and how it should work."
-              : "Give it a face, a name, and a job to do."}
+              : "A name, a role, and instructions. Make it work your way."}
           </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="flex flex-col gap-6"
+          className="flex flex-col gap-5"
           noValidate
         >
           <ToggleGroup
             aria-label="Bot presets"
             variant="outline"
-            className="flex-wrap"
+            className="flex-wrap gap-1.5"
             value={presets.some((preset) => preset.job === job) ? [job] : []}
             disabled={pending}
             onValueChange={(value) => {
@@ -211,16 +213,16 @@ export function BotDialog({
               <ToggleGroupItem
                 key={preset.job}
                 value={preset.job}
-                className="rounded-full"
+                className="rounded-md text-xs"
               >
                 {preset.job}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-          <div className="flex flex-wrap items-center gap-4">
-            <ChatAvatar seed={avatar} className="size-12" />
+          <div className="order-first flex flex-wrap items-center gap-4 rounded-xl border border-border/70 bg-muted/30 p-4">
+            <ChatAvatar seed={avatar} className="size-14" />
             <div className="flex flex-1 flex-col gap-1">
-              <p>Face</p>
+              <p className="text-sm font-medium">Make it yours</p>
               <FieldDescription>
                 Shuffle until you find one you like.
               </FieldDescription>
@@ -287,7 +289,7 @@ export function BotDialog({
                             ? `bot-${item.name}-error`
                             : undefined
                         }
-                        className="min-h-28"
+                        className="min-h-32 resize-y bg-background/40 text-sm"
                       />
                     ) : (
                       <Input
@@ -302,7 +304,7 @@ export function BotDialog({
                             ? `bot-${item.name}-error`
                             : undefined
                         }
-                        className="h-10"
+                        className="h-10 bg-background/40 text-sm"
                       />
                     )}
                     {fieldState.invalid && (
@@ -317,7 +319,7 @@ export function BotDialog({
             ))}
           </FieldGroup>
           <FieldError errors={[form.formState.errors.root]} />
-          <DialogFooter>
+          <DialogFooter className="border-t border-border pt-5">
             {bot && (
               <AlertDialog
                 open={confirmDelete}
