@@ -9,6 +9,7 @@ import { BotDialog } from "@/components/bot-dialog"
 import { DialogTrigger } from "@/components/ui/dialog"
 import type { ChatBot, getChat } from "@/queries/chats"
 import { ChatAvatar } from "@/components/chat-avatar"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { useChatDesktop } from "@/components/chat-desktop"
 
@@ -23,8 +24,9 @@ export function ChatHeader({
   const { panelRef, panelId, open } = useChatDesktop()
 
   return (
-    <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
-      <h1 className="min-w-0 flex-1">
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/80 bg-background px-3 sm:px-5">
+      <SidebarTrigger className="mr-1 text-muted-foreground" />
+      <h1 className="min-w-0 flex-1 text-sm">
         {chat.kind === "group" ? (
           <GroupChatDialog
             bots={bots}
@@ -75,8 +77,8 @@ export function ChatHeader({
         <Button
           type="button"
           variant="ghost"
-          size="icon"
-          aria-label="Desktop"
+          size="sm"
+          aria-label="Sandbox desktop"
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => {
@@ -86,6 +88,7 @@ export function ChatHeader({
           }}
         >
           <MonitorIcon aria-hidden="true" />
+          <span className="hidden sm:inline">Sandbox</span>
         </Button>
       )}
     </header>

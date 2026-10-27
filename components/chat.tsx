@@ -30,13 +30,12 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message"
+import { ChatTool } from "@/components/chat-tool"
 import {
-  Tool,
-  ToolHeader,
-  ToolContent,
-  ToolInput,
-  ToolOutput,
-} from "@/components/ai-elements/tool"
+  Reasoning,
+  ReasoningTrigger,
+  ReasoningContent,
+} from "@/components/ai-elements/reasoning"
 import {
   PromptInput,
   PromptInputActionMenu,
@@ -183,10 +182,15 @@ function ChatView({
   const pending = status === "submitted" || status === "streaming"
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <Conversation className="min-h-0 overflow-x-hidden">
-        <ConversationContent className="mx-auto w-full max-w-3xl">
-          {messages.length === 0 && <ConversationEmptyState />}
+        <ConversationContent className="mx-auto w-full max-w-3xl gap-7 px-5 py-8 sm:px-8">
+          {messages.length === 0 && (
+            <ConversationEmptyState
+              title="Start with a task"
+              description="Ask a question, explore an idea, or give your bot something to work on."
+            />
+          )}
           {messages.map((message) => {
             const target = message.parts.find(
               (part) => part.type === "data-target-bot"
@@ -233,7 +237,8 @@ function ChatView({
                 index < message.parts.indexOf(handoff)
               )
                 return false
-              if (part.type === "text") return Boolean(part.text.trim())
+              if (part.type === "text" || part.type === "reasoning")
+                return Boolean(part.text.trim())
               return isToolUIPart(part) && !(handoffName && part === handoff)
             })
             return (
@@ -264,6 +269,24 @@ function ChatView({
                       )}
                     <MessageContent>
                       {visibleParts.map((part, index) => {
+                        if (part.type === "reasoning")
+                          return (
+                            <Reasoning
+                              key={index}
+                              isStreaming={part.state === "streaming"}
+                              className="my-1"
+                            >
+                              <ReasoningTrigger
+                                getThinkingMessage={(streaming) =>
+                                  streaming ? "Thinking…" : "Reasoning"
+                                }
+                                className="min-h-9 rounded-md px-2 text-xs hover:bg-muted/60 motion-reduce:transition-none"
+                              />
+                              <ReasoningContent className="ml-3 border-l pl-4 text-xs motion-reduce:animate-none">
+                                {part.text}
+                              </ReasoningContent>
+                            </Reasoning>
+                          )
                         if (part.type === "text" && index === 0 && targetBot)
                           return (
                             <div key={index} className="flex items-start gap-2">
@@ -322,32 +345,17 @@ function ChatView({
                             />
                           )
                         return (
-                          <Tool key={part.toolCallId}>
-                            <ToolHeader
-                              {...(part.type === "dynamic-tool"
-                                ? {
-                                    type: part.type,
-                                    toolName: part.toolName,
-                                    state: part.state,
-                                  }
-                                : { type: part.type, state: part.state })}
-                            />
-                            <ToolContent>
-                              {part.input !== undefined && (
-                                <ToolInput input={part.input} />
-                              )}
-                              <ToolOutput
-                                output={
-                                  screenshot
-                                    ? part.state === "output-available"
-                                      ? "Screen inspected."
-                                      : undefined
-                                    : part.output
-                                }
-                                errorText={part.errorText}
-                              />
-                            </ToolContent>
-                          </Tool>
+                          <ChatTool
+                            key={part.toolCallId}
+                            part={part}
+                            output={
+                              screenshot
+                                ? part.state === "output-available"
+                                  ? "Screen inspected."
+                                  : undefined
+                                : part.output
+                            }
+                          />
                         )
                       })}
                     </MessageContent>
@@ -357,14 +365,17 @@ function ChatView({
             )
           })}
           {status === "submitted" && (
-            <p role="status" className="text-sm text-muted-foreground">
-              Thinking…
+            <p
+              role="status"
+              className="flex items-center gap-2 text-xs text-muted-foreground"
+            >
+              Working…
             </p>
           )}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
-      <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3 p-4">
+      <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3 px-4 pt-3 pb-4 sm:px-8">
         {connectionError && (
           <Alert variant="destructive">
             <AlertDescription>
@@ -387,6 +398,7 @@ function ChatView({
           </Alert>
         )}
         <PromptInput
+          className="[&>[data-slot=input-group]]:rounded-2xl [&>[data-slot=input-group]]:border-input [&>[data-slot=input-group]]:bg-card [&>[data-slot=input-group]]:shadow-sm"
           onSubmit={async () => {
             if (!text.trim() || pending || (members && !botId)) return
             await sendMessage({
@@ -403,14 +415,21 @@ function ChatView({
           <PromptInputBody>
             <PromptInputTextarea
               aria-label="Message"
+              placeholder={
+                members ? "Message the selected bot…" : "Give your bot a task…"
+              }
+              className="min-h-16 text-sm"
               value={text}
               onChange={(event) => setText(event.target.value)}
               disabled={pending}
             />
           </PromptInputBody>
-          <PromptInputFooter
-            className={members ? "justify-between" : "justify-end"}
-          >
+          <PromptInputFooter className="justify-between">
+            {!members && (
+              <span className="px-1 text-xs text-muted-foreground">
+                Your bot · private workspace
+              </span>
+            )}
             {members && (
               <PromptInputActionMenu>
                 <PromptInputActionMenuTrigger
@@ -460,6 +479,9 @@ function ChatView({
             />
           </PromptInputFooter>
         </PromptInput>
+        <p className="text-center text-[10px] text-muted-foreground">
+          Review important results before acting.
+        </p>
       </div>
     </div>
   )

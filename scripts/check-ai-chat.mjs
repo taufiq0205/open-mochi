@@ -692,6 +692,7 @@ const renderedMessages = [
     parts: [
       { type: "data-bot-avatar", data: "reply-bot-avatar" },
       { type: "text", text: "Done." },
+      { type: "reasoning", text: "Provider reasoning content", state: "done" },
       {
         type: "tool-bash",
         toolCallId: "bash_1",
@@ -705,6 +706,14 @@ const renderedMessages = [
         state: "output-available",
         input: {},
         output: { screenshot: "SECRET_SCREENSHOT_BYTES" },
+      },
+      {
+        type: "tool-viewScreen",
+        toolCallId: "failed_screen",
+        state: "output-error",
+        input: {},
+        output: { screenshot: "SECRET_ERROR_SCREENSHOT_BYTES" },
+        errorText: "Screen unavailable.",
       },
       {
         type: "tool-viewScreen",
@@ -734,6 +743,55 @@ const connectionEffects = []
 let finishStart
 let resumeCalls = 0
 const loadTranscript = async () => ({ messages: renderedMessages })
+const toolUI = {
+  ...primitives(["Tool", "ToolContent"]),
+  ToolInput: ({ input }) =>
+    React.createElement("pre", null, JSON.stringify(input)),
+  ToolOutput: ({ output, errorText }) =>
+    React.createElement("pre", null, JSON.stringify(output), errorText),
+}
+const { ChatTool } = load("../components/chat-tool.tsx", {
+  "react/jsx-runtime": jsxRuntime,
+  ai: { getToolName },
+  "lucide-react": primitives([
+    "CheckIcon",
+    "ChevronDownIcon",
+    "CircleDashedIcon",
+    "ClockIcon",
+    "XIcon",
+  ]),
+  "@/components/ui/collapsible": primitives(["CollapsibleTrigger"]),
+  "@/components/ai-elements/tool": toolUI,
+})
+for (const [state, label] of Object.entries({
+  "input-streaming": "Preparing",
+  "input-available": "Running",
+  "approval-requested": "Needs approval",
+  "approval-responded": "Approval received",
+  "output-available": "Completed",
+  "output-error": "Failed",
+  "output-denied": "Denied",
+})) {
+  const html = renderToStaticMarkup(
+    React.createElement(ChatTool, {
+      output: "<script>example</script>",
+      part: {
+        type: "dynamic-tool",
+        toolName: "readFile",
+        toolCallId: "status-test",
+        state,
+        input: { path: "<unsafe>" },
+        output: "<script>example</script>",
+      },
+    })
+  )
+  assert.ok(html.includes(label), `${state} must display ${label}`)
+  assert.ok(html.includes("read File"))
+  assert.ok(!html.includes("<script>"), "Tool content must remain escaped")
+}
+console.log(
+  "Compact tool rows render all SDK states and escape untrusted content."
+)
 const { Chat } = load("../components/chat.tsx", {
   "@/lib/auth-client": { useEntitlement: () => ({ paid, isLoaded: true }) },
   "@/lib/billing": billing,
@@ -747,6 +805,12 @@ const { Chat } = load("../components/chat.tsx", {
     },
   },
   react: { ...React, useEffect: (effect) => connectionEffects.push(effect) },
+  "@/components/chat-tool": { ChatTool },
+  "@/components/ai-elements/reasoning": primitives([
+    "Reasoning",
+    "ReasoningTrigger",
+    "ReasoningContent",
+  ]),
   "@/components/chat-avatar": {
     ChatAvatar: ({ seed }) => React.createElement("i", { "data-avatar": seed }),
   },
@@ -828,6 +892,7 @@ const markup = renderToStaticMarkup(
   React.createElement(Chat, { chatId: "chat_1" })
 )
 assert.match(markup, /Done\./)
+assert.match(markup, /Provider reasoning content/)
 const disconnect = connectionEffects.at(-1)()
 assert.match(
   markup,
@@ -845,13 +910,16 @@ finishStart()
 await new Promise(setImmediate)
 assert.equal(resumeCalls, 1, "Navigating away must cancel deferred resume")
 assert.doesNotMatch(markup, /reply-bot-avatar/)
-assert.match(markup, /output-available/)
-assert.match(markup, /input-streaming/)
-assert.match(markup, /output-error/)
+assert.match(markup, /Completed/)
+assert.match(markup, /Preparing/)
+assert.match(markup, /Failed/)
 assert.match(markup, /home\/test/)
 assert.match(markup, /Screen inspected/)
 assert.match(markup, /Sandbox operation failed/)
-assert.doesNotMatch(markup, /SECRET_SCREENSHOT_BYTES/)
+assert.doesNotMatch(
+  markup,
+  /SECRET_SCREENSHOT_BYTES|SECRET_ERROR_SCREENSHOT_BYTES/
+)
 assert.match(markup, /src="data:image\/png;base64,SHARED_SCREENSHOT_BYTES"/)
 assert.match(markup, /alt="Agent desktop screenshot"/)
 console.log(

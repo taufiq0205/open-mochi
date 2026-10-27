@@ -123,8 +123,32 @@ export function SandboxDesktop({
     )
 
   return (
-    <div className="flex flex-col gap-3 p-4">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border bg-background">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto bg-muted/15 p-3 sm:p-4">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-1">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-medium">
+            {name}&apos;s sandbox
+          </h2>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Desktop preview
+          </p>
+        </div>
+        <span
+          role="status"
+          className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground"
+        >
+          <span
+            aria-hidden="true"
+            className={`size-1.5 rounded-full ${status === "connected" ? "bg-emerald-400" : status === "error" ? "bg-destructive" : "bg-muted-foreground motion-safe:animate-pulse"}`}
+          />
+          {status === "connected"
+            ? "Connected"
+            : status === "error"
+              ? "Disconnected"
+              : "Connecting"}
+        </span>
+      </div>
+      <div className="relative min-h-24 flex-1 overflow-hidden rounded-xl border border-border bg-background shadow-sm">
         <div ref={preview} className="absolute inset-0" />
         <Button
           variant="ghost"
@@ -133,7 +157,9 @@ export function SandboxDesktop({
           disabled={status !== "connected"}
           onClick={() => setFullscreen(true)}
         >
-          <span className="sr-only">Open desktop fullscreen</span>
+          <span className="absolute right-3 bottom-3 rounded-md border border-border bg-background/90 px-3 py-1.5 text-xs shadow-sm">
+            Open desktop ↗
+          </span>
         </Button>
         {status === "connecting" && (
           <p
@@ -144,8 +170,8 @@ export function SandboxDesktop({
           </p>
         )}
       </div>
-      <p className="text-center text-sm text-muted-foreground">
-        {name}&apos;s screen
+      <p className="shrink-0 px-1 text-[10px] text-muted-foreground">
+        Preview is view-only. Open the desktop to interact.
       </p>
       {status === "error" && (
         <Alert variant="destructive">

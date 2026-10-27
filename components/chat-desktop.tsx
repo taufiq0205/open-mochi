@@ -7,11 +7,16 @@ import {
   useState,
   type ReactNode,
 } from "react"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { usePanelRef } from "react-resizable-panels"
 
 import { SandboxDesktop } from "@/components/sandbox-desktop"
 
-import { ResizablePanel } from "@/components/ui/resizable"
+import {
+  ResizablePanel,
+  ResizablePanelGroup,
+  ResizableHandle,
+} from "@/components/ui/resizable"
 
 const ChatDesktopContext = createContext<{
   panelRef: ReturnType<typeof usePanelRef>
@@ -67,5 +72,26 @@ export function ChatDesktopPanel({
         {activated && <SandboxDesktop chatId={chatId} name={name} />}
       </div>
     </ResizablePanel>
+  )
+}
+
+export function ChatWorkspace({
+  chatId,
+  name,
+  children,
+}: {
+  chatId: string
+  name: string
+  children: ReactNode
+}) {
+  const mobile = useIsMobile()
+  return (
+    <ResizablePanelGroup orientation={mobile ? "vertical" : "horizontal"}>
+      <ResizablePanel defaultSize="100%" minSize="30%">
+        {children}
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ChatDesktopPanel chatId={chatId} name={name} />
+    </ResizablePanelGroup>
   )
 }

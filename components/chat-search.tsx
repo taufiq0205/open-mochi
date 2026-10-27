@@ -24,7 +24,7 @@ export function ChatSearch({
 }) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
-  const { state, isMobile } = useSidebar()
+  const { state, isMobile, setOpenMobile } = useSidebar()
   const collapsed = state === "collapsed" && !isMobile
 
   useEffect(() => {
@@ -94,6 +94,7 @@ export function ChatSearch({
                   keywords={[chat.name]}
                   onSelect={() => {
                     setOpen(false)
+                    setOpenMobile(false)
                     router.push(`/chats/${chat.id}`)
                   }}
                 >
