@@ -3,8 +3,6 @@ import * as sentryNode from "@sentry/node"
 import { mockChatAgent } from "@trigger.dev/sdk/ai/test"
 import { chat as managedChat } from "@trigger.dev/sdk/ai"
 import assert from "node:assert/strict"
-import * as billing from "../lib/billing.ts"
-import * as usagePolicy from "../lib/usage-policy.ts"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { configure } from "@trigger.dev/sdk"
@@ -39,7 +37,6 @@ function load(path, dependencies) {
   return exports
 }
 
-let paid = true
 let authenticated = true
 let owned = true
 let failure = false
@@ -48,11 +45,11 @@ const previousVercelBranch = process.env.VERCEL_GIT_COMMIT_REF
 process.env.VERCEL_GIT_COMMIT_REF = "main"
 const actions = load("../actions/chat.ts", {
   zod: { z },
-  "@/lib/billing": billing,
+
   "@/lib/session": {
-    getAccess: async () => {
+    requireSession: async () => {
       if (!authenticated) throw new Error("Unauthorized")
-      return { userId: "user_1", paid }
+      return { userId: "user_1" }
     },
   },
   "@/queries/chats": {
@@ -91,15 +88,6 @@ assert.equal(
 )
 if (previousVercelBranch === undefined) delete process.env.VERCEL_GIT_COMMIT_REF
 else process.env.VERCEL_GIT_COMMIT_REF = previousVercelBranch
-paid = false
-for (const invoke of [
-  () => actions.startChatSession({ chatId: "chat_1" }),
-  () => actions.mintChatAccessToken("chat_1"),
-  () => actions.loadChatTranscript({ chatId: "chat_1" }),
-])
-  await assert.rejects(invoke(), { message: billing.BILLING_ERROR })
-assert.deepEqual(calls, [])
-paid = true
 
 for (const action of [
   () =>
@@ -154,27 +142,19 @@ let writeResponse = (part) => responseParts.push(part)
 let uiHistory = []
 let readHistory = () => uiHistory
 let roster = []
-let workerPaid = true
 const turnExceptions = []
 const { chatAgent } = load("../trigger/chat.ts", {
   "@sentry/node": {
     captureException: (error) => turnExceptions.push(error),
     flush: async () => true,
   },
-  "../lib/billing": billing,
-  "../lib/paid-plan": {
-    requirePaidUser: async (userId) => {
-      assert.equal(userId, "user_1")
-      if (!workerPaid) throw new Error(billing.BILLING_ERROR)
-    },
-  },
+
   zod: { z },
   ai: { stepCountIs, tool },
   "../lib/sandbox-tools": { createSandboxTools },
-  "../lib/usage-policy": usagePolicy,
-  "../lib/metered-model": { meteredModel: (model) => model },
-  "../lib/metered-sandbox": {
-    openMeteredSandbox: async (userId, id) => {
+
+  "../lib/sandbox": {
+    openSandbox: async (userId, id) => {
       assert.equal(userId, "user_1")
       sandboxIds.push(id)
       return {
@@ -205,6 +185,8 @@ const { chatAgent } = load("../trigger/chat.ts", {
     Pool: class {
       on() {}
       async query(sql, values) {
+        if (sql.includes('c.user_id AS "userId"'))
+          assert.match(sql, /JOIN auth_user u ON u.id = c.user_id/)
         queries.push({ sql, values })
         if (queryFailure) throw new Error("Database unavailable")
         return {
@@ -228,12 +210,6 @@ await chatAgent.onTurnComplete({
   stopped: false,
 })
 assert.deepEqual(turnExceptions, [unexpectedTurnError])
-for (const error of [
-  new usagePolicy.UsageError(usagePolicy.USAGE_ERROR),
-  new Error(billing.BILLING_ERROR),
-]) {
-  await chatAgent.onTurnComplete({ chatId: "chat_1", error, stopped: false })
-}
 await chatAgent.onTurnComplete({
   chatId: "chat_1",
   error: new Error("Cancelled"),
@@ -242,7 +218,7 @@ await chatAgent.onTurnComplete({
 assert.equal(
   turnExceptions.length,
   1,
-  "expected limits and stopped turns are not captured as exceptions"
+  "stopped turns are not captured as exceptions"
 )
 assert.deepEqual(await chatAgent.onValidateMessages({ messages }), messages)
 const taggedMessages = [
@@ -294,10 +270,6 @@ try {
       tools: resolvedTools,
       streamText: (options) => options,
     })
-  workerPaid = false
-  await assert.rejects(run(), { message: billing.BILLING_ERROR })
-  assert.deepEqual(sandboxIds, [])
-  workerPaid = true
   const result = await run()
   assert.match(result.instructions, /"name":"Ada","job":"Research assistant"/)
   assert.match(result.instructions, /Your purpose is to help the user/)
@@ -793,10 +765,6 @@ console.log(
   "Compact tool rows render all SDK states and escape untrusted content."
 )
 const { Chat } = load("../components/chat.tsx", {
-  "@/lib/auth-client": { useEntitlement: () => ({ paid, isLoaded: true }) },
-  "@/lib/billing": billing,
-  "@/lib/usage-policy": usagePolicy,
-  "@/components/upgrade-toast": { showUpgradeToast() {} },
   "react/jsx-runtime": jsxRuntime,
   "next/image": {
     default: ({ unoptimized, ...props }) => {
@@ -880,14 +848,6 @@ const { Chat } = load("../components/chat.tsx", {
   "@/components/ui/button": primitives(["Button"]),
   "@/components/ui/badge": primitives(["Badge"]),
 })
-paid = false
-const locked = renderToStaticMarkup(
-  React.createElement(Chat, { chatId: "chat_1" })
-)
-assert.match(locked, /Unlock chat/)
-assert.doesNotMatch(locked, /Done\.|SECRET_SCREENSHOT_BYTES/)
-assert.equal(transportClientData, undefined)
-paid = true
 const markup = renderToStaticMarkup(
   React.createElement(Chat, { chatId: "chat_1" })
 )

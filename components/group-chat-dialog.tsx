@@ -1,9 +1,5 @@
 "use client"
 
-import { useEntitlement } from "@/lib/auth-client"
-import { BILLING_ERROR } from "@/lib/billing"
-import { showUpgradeToast } from "@/components/upgrade-toast"
-
 import { useState, useTransition, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Controller, useForm, useWatch } from "react-hook-form"
@@ -63,7 +59,6 @@ export function GroupChatDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { paid } = useEntitlement()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string>()
   const [pending, startTransition] = useTransition()
@@ -74,14 +69,12 @@ export function GroupChatDialog({
   })
   const selected = useWatch({ control: form.control, name: "botIds" })
   function onDelete() {
-    if (!paid) return showUpgradeToast()
     if (!group) return
     setDeleteError(undefined)
     startTransition(async () => {
       try {
         const result = await deleteGroupChat(group.id)
         if (result.error) {
-          if (result.error === BILLING_ERROR) showUpgradeToast()
           setDeleteError(result.error)
           return
         }
@@ -95,7 +88,6 @@ export function GroupChatDialog({
     })
   }
   function onSubmit(values: CreateGroupChatInput) {
-    if (!paid) return showUpgradeToast()
     form.clearErrors("root")
     startTransition(async () => {
       try {
@@ -103,7 +95,6 @@ export function GroupChatDialog({
           ? await updateGroupChat(group.id, values)
           : await createGroupChat(values)
         if (result.error) {
-          if (result.error === BILLING_ERROR) showUpgradeToast()
           form.setError("root", { message: result.error })
           return
         }
@@ -127,7 +118,7 @@ export function GroupChatDialog({
       open={open}
       onOpenChange={(value) => {
         if (pending) return
-        if (value && !paid) return showUpgradeToast()
+
         setOpen(value)
         form.reset(group ?? { name: "", botIds: [] })
       }}

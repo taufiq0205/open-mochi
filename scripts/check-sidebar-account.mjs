@@ -110,6 +110,7 @@ function find(node, test) {
   }
 }
 let tree = render()
+assert.doesNotMatch(renderToStaticMarkup(tree), /href="\/(usage|pricing)"/)
 const trigger = find(
   tree,
   (node) => node.props?.["aria-label"] === "Account menu"

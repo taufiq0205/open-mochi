@@ -1,7 +1,5 @@
 import * as sentryCore from "@sentry/core"
 import assert from "node:assert/strict"
-import * as billing from "../lib/billing.ts"
-import * as usagePolicy from "../lib/usage-policy.ts"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { z } from "zod"
@@ -27,18 +25,17 @@ function load(path, dependencies) {
   return exports
 }
 
-let paid = true
 let authenticated = true
 let chat = { botSandboxId: "owned_sandbox" }
 let fail = false
 const calls = []
 const { connectDesktop } = load("../actions/desktop.ts", {
   zod: { z },
-  "@/lib/billing": billing,
+
   "@/lib/session": {
-    getAccess: async () => {
+    requireSession: async () => {
       if (!authenticated) throw new Error("Unauthorized")
-      return { userId: "user_1", paid }
+      return { userId: "user_1" }
     },
   },
   "@/queries/chats": {
@@ -47,9 +44,9 @@ const { connectDesktop } = load("../actions/desktop.ts", {
       return chat
     },
   },
-  "@/lib/usage-policy": usagePolicy,
-  "@/lib/metered-sandbox": {
-    openMeteredSandbox: async (userId, id) => {
+
+  "@/lib/sandbox": {
+    openSandbox: async (userId, id) => {
       assert.equal(userId, "user_1")
       calls.push(["get", id])
       if (fail) throw new Error("secret provider detail")
@@ -65,12 +62,6 @@ const { connectDesktop } = load("../actions/desktop.ts", {
     },
   },
 })
-paid = false
-assert.deepEqual(await connectDesktop("chat_1"), {
-  error: billing.BILLING_ERROR,
-})
-assert.deepEqual(calls, [])
-paid = true
 
 authenticated = false
 await assert.rejects(connectDesktop("chat_1"), /Unauthorized/)
@@ -120,9 +111,6 @@ const originalDocument = globalThis.document
 globalThis.document = { createElement: () => host }
 const pass = () => null
 const { SandboxDesktop } = load("../components/sandbox-desktop.tsx", {
-  "@/lib/auth-client": { useEntitlement: () => ({ paid }) },
-  "@/lib/billing": billing,
-  "@/components/upgrade-toast": { showUpgradeToast() {} },
   "react/jsx-runtime": jsx,
   react: {
     useRef: (current) => {

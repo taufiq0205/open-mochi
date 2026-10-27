@@ -4,11 +4,7 @@ import { deepSeek } from "@ai-sdk/deepseek"
 import { chat } from "@trigger.dev/sdk/ai"
 import { Pool } from "pg"
 import { z } from "zod"
-import { requirePaidUser } from "../lib/paid-plan"
-import { BILLING_ERROR } from "../lib/billing"
-import { openMeteredSandbox } from "../lib/metered-sandbox"
-import { meteredModel } from "../lib/metered-model"
-import { MAX_OUTPUT_TOKENS, USAGE_ERROR, UsageError } from "../lib/usage-policy"
+import { openSandbox } from "../lib/sandbox"
 import { stepCountIs, tool, type ModelMessage } from "ai"
 import { createSandboxTools } from "../lib/sandbox-tools"
 
@@ -63,7 +59,7 @@ export const chatAgent = chat
           sandboxId: string | null
           userId: string
         }>(
-          `SELECT c.user_id AS "userId", b.sandbox_id AS "sandboxId" FROM chats c
+          `SELECT c.user_id AS "userId", b.sandbox_id AS "sandboxId" FROM chats c JOIN auth_user u ON u.id = c.user_id
        JOIN chat_members m ON m.chat_id = c.id
        JOIN bots b ON b.id = m.bot_id AND b.user_id = c.user_id
        WHERE c.id = $1 AND c.kind = 'direct' ORDER BY m.joined_at, b.id LIMIT 1`,
@@ -71,34 +67,24 @@ export const chatAgent = chat
         )
         if (!rows[0]?.sandboxId)
           throw new Error("No sandbox is associated with this chat")
-        return openMeteredSandbox(rows[0].userId, rows[0].sandboxId)
+        return openSandbox(rows[0].userId, rows[0].sandboxId)
       }),
     }),
     onValidateMessages: async ({ messages }) => messagesSchema.parse(messages),
     onTurnComplete: async ({ chatId, error, stopped }) => {
-      const expected =
-        error instanceof UsageError ||
-        (error instanceof Error &&
-          [BILLING_ERROR, USAGE_ERROR].includes(error.message))
-      if (error && !expected && !stopped) {
+      if (error && !stopped) {
         logger.error("Chat turn failed", { chat_id: chatId })
         captureException(error)
       } else {
         logger.info("Chat turn completed", {
           chat_id: chatId,
-          outcome: expected ? "limited" : stopped ? "stopped" : "completed",
+          outcome: stopped ? "stopped" : "completed",
         })
       }
       await flush(2000)
     },
     uiMessageStreamOptions: {
-      onError: (error) =>
-        error instanceof UsageError
-          ? USAGE_ERROR
-          : error instanceof Error &&
-              [BILLING_ERROR, USAGE_ERROR].includes(error.message)
-            ? error.message
-            : "Could not get a reply. Please try again.",
+      onError: () => "Could not get a reply. Please try again.",
     },
     run: async ({
       chatId,
@@ -121,7 +107,7 @@ export const chatAgent = chat
         instructions: string | null
         sandboxId: string | null
       }>(
-        `SELECT c.user_id AS "userId", c.kind, b.id, b.avatar, b.name, b.job, b.instructions, b.sandbox_id AS "sandboxId" FROM chats c
+        `SELECT c.user_id AS "userId", c.kind, b.id, b.avatar, b.name, b.job, b.instructions, b.sandbox_id AS "sandboxId" FROM chats c JOIN auth_user u ON u.id = c.user_id
        LEFT JOIN LATERAL (
          SELECT b.id, b.avatar, b.name, b.job, b.instructions, b.sandbox_id FROM chat_members m
          JOIN bots b ON b.id = m.bot_id AND b.user_id = c.user_id
@@ -131,7 +117,6 @@ export const chatAgent = chat
         [chatId, clientData?.botId ?? null]
       )
       if (!rows.length) throw new Error("Chat not found.")
-      await requirePaidUser(rows[0].userId)
       let bot = rows[0]
       if (bot.kind === "group" && !bot.name)
         throw new Error("Select a bot that belongs to this group.")
@@ -152,7 +137,7 @@ export const chatAgent = chat
       const memoryForBot = (sandboxId = bot.sandboxId) =>
         createSandboxTools(async () => {
           if (!sandboxId) throw new Error("This bot has no sandbox memory")
-          return openMeteredSandbox(rows[0].userId, sandboxId)
+          return openSandbox(rows[0].userId, sandboxId)
         })
       let memoryTools = memoryForBot()
       let handedOff = false
@@ -242,8 +227,8 @@ export const chatAgent = chat
           .filter(Boolean)
           .join("\n\n")
       const options = {
-        model: meteredModel(deepSeek("deepseek-flash"), rows[0].userId),
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        model: deepSeek("deepseek-flash"),
+        maxOutputTokens: 4096,
         maxRetries: 0,
         messages: conversation,
         stopWhen: stepCountIs(20),

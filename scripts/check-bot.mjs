@@ -1,7 +1,5 @@
 import * as sentryCore from "@sentry/core"
 import assert from "node:assert/strict"
-import * as billing from "../lib/billing.ts"
-import * as usagePolicy from "../lib/usage-policy.ts"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 import * as orm from "drizzle-orm"
@@ -61,7 +59,6 @@ const sandbox = {
     if (sandboxFailure === "delete") throw new Error("Delete failed")
   },
 }
-let paid = true
 let authenticated = true
 let failingTable
 const rows = []
@@ -85,14 +82,7 @@ const updateDb = drizzle({
 })
 const telemetry = []
 const dependencies = {
-  "@/lib/usage-policy": usagePolicy,
-  "@/lib/metered-sandbox": {
-    reserveSandboxCreation: async () => ({
-      id: "lease_1",
-      name: "sandbox_name",
-    }),
-    closeSandboxLease: async () => {},
-  },
+  "@/lib/sandbox": { STORAGE_TTL_MINUTES: 1440 },
   "@/lib/daytona": {
     getDaytona: () => new dependencies["@daytona/sdk"].Daytona(),
   },
@@ -101,8 +91,7 @@ const dependencies = {
     Daytona: class {
       async create(params) {
         assert.deepEqual(params, {
-          name: "sandbox_name",
-          ttlMinutes: 6,
+          ttlMinutes: 1440,
           autoStopInterval: 1,
           autoDeleteInterval: 1440,
           public: false,
@@ -120,11 +109,11 @@ const dependencies = {
     },
   },
   "drizzle-orm": orm,
-  "@/lib/billing": billing,
+
   "@/lib/session": {
-    getAccess: async () => {
+    requireSession: async () => {
       if (!authenticated) throw new Error("Unauthorized")
-      return { userId: "user_1", paid }
+      return { userId: "user_1" }
     },
   },
   "next/cache": { revalidatePath: (...args) => paths.push(args) },
@@ -180,18 +169,6 @@ new Function("require", "exports", compiled)((name) => {
   assert.ok(name in dependencies, `Unexpected dependency: ${name}`)
   return dependencies[name]
 }, actions)
-
-paid = false
-for (const invoke of [
-  () => actions.createBot(valid),
-  () => actions.updateBot("bot_1", valid),
-  () => actions.deleteBot("bot_1"),
-])
-  assert.deepEqual(await invoke(), { error: billing.BILLING_ERROR })
-assert.deepEqual(sandboxCalls, [])
-assert.deepEqual(rows, [])
-assert.deepEqual(updates, [])
-paid = true
 
 authenticated = false
 await assert.rejects(actions.createBot(valid), /Unauthorized/)

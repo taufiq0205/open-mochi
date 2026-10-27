@@ -15,14 +15,13 @@
     "db:studio": "drizzle-kit studio",
     "db:check": "node --conditions=react-server scripts/check-db.mjs",
     "deployment:check": "node scripts/check-deployment.mjs",
-    "auth:check": "node scripts/check-session.mjs && node scripts/check-billing.mjs",
+    "auth:check": "node scripts/check-session.mjs",
     "auth:live": "node scripts/check-auth-live.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.64",
     "@ai-sdk/react": "^4.0.143",
     "@base-ui/react": "^1.9.0",
-    "@clerk/backend": "3.23.2",
     "@daytona/sdk": "^0.224.0",
     "@dicebear/core": "^10.7.0",
     "@dicebear/styles": "^10.6.0",

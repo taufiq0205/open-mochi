@@ -73,14 +73,6 @@ try {
   const accounts = []
   for (let i = 0; i < 2; i++) {
     const email = `auth-check-${i}-${suffix}@example.invalid`
-    const spoof = await request("/api/auth/sign-up/email", {
-      email,
-      password,
-      name: "Auth check",
-      clerkUserId: "spoofed-owner",
-      id: "spoofed-id",
-    })
-    assert.equal(spoof.status, 400, "Server-owned field rejected at signup")
     const response = await request("/api/auth/sign-up/email", {
       email,
       password,
@@ -96,13 +88,6 @@ try {
     assert.match(result.user.id, /^[a-zA-Z0-9_-]+$/)
     ids.push(result.user.id)
     assert.notEqual(result.user.id, "spoofed-id")
-    assert.equal(result.user.clerkUserId, undefined)
-    assert.equal(
-      sql(
-        `SELECT clerk_user_id IS NULL FROM auth_user WHERE id='${result.user.id}'`
-      ),
-      "t"
-    )
     assert.ok(
       response.headers
         .getSetCookie()
@@ -111,16 +96,11 @@ try {
     const cookie = cookies(response)
     const update = await request(
       "/api/auth/update-user",
-      { name: "Auth check", clerkUserId: "spoofed-update" },
+      { name: "Auth check", id: "spoofed-update" },
       cookie
     )
-    assert.equal(update.status, 400, "Server-owned field rejected at update")
-    assert.equal(
-      sql(
-        `SELECT clerk_user_id IS NULL FROM auth_user WHERE id='${result.user.id}'`
-      ),
-      "t"
-    )
+    assert.equal(update.status, 200)
+    assert.equal((await (await request("/api/auth/get-session", null, cookie)).json()).user.id, result.user.id)
     assert.ok(cookie)
     const session = await (
       await request("/api/auth/get-session", null, cookie)
@@ -132,8 +112,8 @@ try {
       307,
       "Authenticated users skip the login page"
     )
-    const entitlement = await request("/api/entitlement", null, cookie)
-    assert.deepEqual(await entitlement.json(), { paid: false })
+    for (const path of ["/api/entitlement", "/pricing", "/usage"])
+      assert.equal((await request(path, null, cookie)).status, 404)
     accounts.push({ email, cookie, id: result.user.id })
   }
   const [first, second] = accounts
@@ -194,12 +174,8 @@ try {
     null
   )
   assert.equal((await request("/dashboard", null, loginCookie)).status, 307)
-  assert.equal(
-    (await request("/api/entitlement", null, loginCookie)).status,
-    401
-  )
   console.log(
-    "Live auth passed: signup, field spoofing denial, password login, origin rejection, signout, expired session, unpaid gate, cross-user chat denial."
+    "Live auth passed: signup, immutable identity, password login, origin rejection, signout, expired session, removed billing routes, cross-user chat denial."
   )
 } finally {
   if (ids.length) {

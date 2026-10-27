@@ -12,17 +12,6 @@ export const auth = betterAuth({
     minPasswordLength: 12,
     maxPasswordLength: 128,
   },
-  user: {
-    additionalFields: {
-      // Only an operator may link a verified legacy billing identity.
-      clerkUserId: {
-        type: "string",
-        required: false,
-        input: false,
-        returned: false,
-      },
-    },
-  },
   rateLimit: { enabled: true },
   plugins: [nextCookies()],
   session: { cookieCache: { enabled: false } },

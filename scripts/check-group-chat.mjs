@@ -1,6 +1,5 @@
 import * as sentryCore from "@sentry/core"
 import assert from "node:assert/strict"
-import * as billing from "../lib/billing.ts"
 import { readFileSync } from "node:fs"
 import ts from "typescript"
 import * as zod from "zod"
@@ -42,7 +41,6 @@ for (const value of [
 ]) {
   assert.equal(schema.createGroupChatSchema.safeParse(value).success, false)
 }
-let paid = true
 let authenticated = true
 let owned = [{ id: "bot_1" }, { id: "bot_2" }]
 let failing = false
@@ -60,11 +58,10 @@ function checkGroupPredicate(predicate) {
 const { createGroupChat, updateGroupChat, deleteGroupChat } = load(
   "../actions/group-chat.ts",
   {
-    "@/lib/billing": billing,
     "@/lib/session": {
-      getAccess: async () => {
+      requireSession: async () => {
         if (!authenticated) throw new Error("Unauthorized")
-        return { userId: "user_1", paid }
+        return { userId: "user_1" }
       },
     },
     "drizzle-orm": orm,
@@ -142,17 +139,6 @@ const { createGroupChat, updateGroupChat, deleteGroupChat } = load(
     },
   }
 )
-paid = false
-assert.deepEqual(await createGroupChat(valid), { error: billing.BILLING_ERROR })
-assert.deepEqual(await updateGroupChat("group_1", valid), {
-  error: billing.BILLING_ERROR,
-})
-assert.deepEqual(await deleteGroupChat("group_1"), {
-  error: billing.BILLING_ERROR,
-})
-assert.equal(transactions, 0)
-assert.equal(deleteCalls, 0)
-paid = true
 
 authenticated = false
 await assert.rejects(createGroupChat(valid), /Unauthorized/)

@@ -1,10 +1,6 @@
 "use client"
 
 import { logger } from "@sentry/core"
-import { useEntitlement } from "@/lib/auth-client"
-import { BILLING_ERROR } from "@/lib/billing"
-import { USAGE_ERROR } from "@/lib/usage-policy"
-import { showUpgradeToast, showUsageToast } from "@/components/upgrade-toast"
 import { useChat } from "@ai-sdk/react"
 import {
   useLoadTranscript,
@@ -58,27 +54,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
-export function Chat(props: { chatId: string; members?: ChatBot[] }) {
-  const { paid, isLoaded } = useEntitlement()
-  if (!isLoaded)
-    return (
-      <p role="status" className="p-4">
-        Loading chat…
-      </p>
-    )
-  if (!paid)
-    return (
-      <div className="flex flex-col items-center gap-4 p-6">
-        <p className="text-muted-foreground">
-          Pro unlocks chat with your bots.
-        </p>
-        <Button onClick={showUpgradeToast}>Unlock chat</Button>
-      </div>
-    )
-  return <PaidChat {...props} />
-}
-
-function PaidChat({
+export function Chat({
   chatId,
   members,
 }: {
@@ -155,10 +131,8 @@ function ChatView({
     id: chatId,
     messages: initialMessages,
     transport,
-    onError: (error) => {
+    onError: () => {
       logger.warn("Chat client received an error", { chat_id: chatId })
-      if (error.message === BILLING_ERROR) showUpgradeToast()
-      if (error.message === USAGE_ERROR) showUsageToast()
     },
   })
   useEffect(() => {

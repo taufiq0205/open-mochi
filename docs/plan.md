@@ -8,7 +8,7 @@ Deliver a self-hostable AI agent workspace that starts, after documented configu
 docker compose up -d --build
 ```
 
-Preserve Mochi's individual and group chats, bot instructions and avatars, agent tool execution, sandbox memory, browser desktop access, authorization, and usage controls.
+Preserve Mochi's individual and group chats, bot instructions and avatars, agent tool execution, sandbox memory, browser desktop access, authorization, and ownership controls.
 
 As of 2026-10-27:
 
@@ -18,7 +18,7 @@ As of 2026-10-27:
 - A Node.js 24 multi-stage image, standalone Next.js output, Compose web service, `/healthz`, named cache volume, and configuration/setup documentation are implemented.
 - Vercel's pool lifecycle hook was removed for the long-running Node server. Reference Sentry DSNs were replaced with optional environment configuration, preserving telemetry filtering.
 - OrbStack context `orbstack`, Docker 29.8.2, Compose v5.5.0, and ARM64 daemon connectivity were verified. The production image builds and the Compose web container becomes healthy with placeholder credentials.
-- Database migration is implemented on `migration/database-postgresql`: local PostgreSQL replaces Neon configuration; verification is recorded below. Better Auth is implemented locally on `migration/auth-better-auth`; Clerk Billing, Trigger.dev Cloud, DeepSeek, Daytona, and optional Sentry remain external. No production deployment is claimed.
+- Database migration is implemented on `migration/database-postgresql`: local PostgreSQL replaces Neon configuration; verification is recorded below. Better Auth is implemented locally on `migration/auth-better-auth`; billing and usage are removed on `removal/billing-usage`. Trigger.dev Cloud, DeepSeek, Daytona, and optional Sentry remain external. No production deployment is claimed.
 
 ## Stack and branch mapping
 
@@ -27,12 +27,12 @@ As of 2026-10-27:
 | `migration/deployment-docker-compose` | Vercel-oriented Next.js deployment | Docker Compose | Establish the root application, Node.js 24 image, configuration examples, service networking, health checks, and persistent volumes. |
 | `migration/database-postgresql` | Neon PostgreSQL | PostgreSQL | Retain Drizzle and `pg`; replace provider-specific setup, configure local connections, and document schema initialization and backups. |
 | `migration/auth-better-auth` | Clerk authentication | Better Auth | Replace login UI, sessions, server actions, worker identity checks, and ownership integration. |
-| `migration/billing-lago` | Clerk Billing and Pro checks | Lago | Implement subscription state and entitlement checks, billing events, usage integration, and payment-provider configuration. |
+| `removal/billing-usage` | Clerk Billing, Pro checks and usage metering | No application billing | Remove subscriptions, entitlements, billing events, usage integration and payment-provider configuration. Created from `migration/billing-lago`, then fast-forwarded to `main` with authorization. |
 | `migration/agents-trigger-self-hosted` | Trigger.dev Cloud | Self-hosted Trigger.dev | Configure platform dependencies, worker builds and deployment, scoped session tokens, streaming, retries, schedules, and sandbox cleanup. |
-| `migration/inference-ollama` | DeepSeek API | Ollama with a suitable model | Retain AI SDK; adapt provider configuration and verify streaming, tool calls, group handoffs, and usage accounting. |
+| `migration/inference-ollama` | DeepSeek API | Ollama with a suitable model | Retain AI SDK; adapt provider configuration and verify streaming, tool calls, group handoffs, and model token limits. |
 | `migration/sandboxes-e2b` | Daytona | E2B Runtime and Desktop | Replace provisioning, shell and file tools, desktop credentials, memory storage, expiry, cleanup, and resource accounting. |
 | `migration/monitoring-glitchtip` | Sentry backend | GlitchTip | Adapt DSNs and build setup; verify supported SDK events, source maps, and worker monitoring. |
-| `revamp/bot-chat-ui` | Existing bot creation and chat interface | Revamped bot and chat UI | Redesign bot creation/editing, individual and group chat layouts, sidebar/navigation, composer, tool-call/results display, and thinking/reasoning states. Reuse existing UI libraries; preserve streaming, handoffs, desktop access, validation, ownership, and usage controls. Verify responsive layouts, keyboard accessibility, and loading/error/empty states. Implemented locally; verification and remaining live checks are recorded below. |
+| `revamp/bot-chat-ui` | Existing bot creation and chat interface | Revamped bot and chat UI | Redesign bot creation/editing, individual and group chat layouts, sidebar/navigation, composer, tool-call/results display, and thinking/reasoning states. Reuse existing UI libraries; preserve streaming, handoffs, desktop access, validation, ownership, and ownership controls. Verify responsive layouts, keyboard accessibility, and loading/error/empty states. Implemented locally; verification and remaining live checks are recorded below. |
 
 Keep Next.js, React, TypeScript, Tailwind, shadcn/ui, Base UI, React Hook Form, Zod, Drizzle, and AI SDK. Retain noVNC only where compatible with the selected desktop integration. Treat target services as candidates until their integration checks pass.
 
@@ -40,7 +40,7 @@ Keep Next.js, React, TypeScript, Tailwind, shadcn/ui, Base UI, React Hook Form, 
 
 1. **Application and Docker foundation:** inspect the reference and copy only required application source into the root, excluding its nested Git repository, secrets, dependencies, and generated output. Establish a working build and Compose entry point. External services may remain temporarily; document them explicitly.
 2. **Database:** establish PostgreSQL and schema initialization before integrating authentication and billing storage. Use Drizzle push for this development migration; review destructive changes before applying them.
-3. **Identity and billing:** implement Better Auth first, then replace Clerk subscription checks in both web and worker paths. Define trusted user identity and entitlement contracts before integrating dependent branches.
+3. **Identity and billing:** implement Better Auth first, then remove billing and usage integration in both web and worker paths. Preserve trusted user identity and ownership before integrating dependent branches.
 4. **Agent platform and inference:** bring up self-hosted Trigger.dev and its workers; integrate Ollama and a tested tool-capable model. Preserve scoped access and group handoff behavior.
 5. **Sandbox and desktop:** integrate E2B and verify its host requirements, persistent bot memory lifecycle, isolated execution, desktop access, and cleanup.
 6. **Monitoring and final Compose integration:** wire supported telemetry, remove obsolete provider requirements, and verify startup from a clean documented setup.
@@ -53,19 +53,19 @@ Implement each service on its named branch when authorized. Integrate completed 
 - [ ] One Compose command builds and starts the documented service set after configuration, including required worker deployment/bootstrap steps.
 - [x] PostgreSQL readiness, schema initialization, persistence across restarts, and backup/restore are checked.
 - [x] Sign-up, sign-in, sign-out, expired sessions, and cross-user access denial work (local HTTP checks; see auth progress).
-- [ ] Subscription changes and billing events update web and worker entitlements safely; duplicate events are handled.
+- Billing scope removed: no subscriptions, entitlements, billing events or payment-provider configuration.
 - [ ] Individual and group chats stream; tool calls, handoffs, retries, and worker restarts behave correctly.
 - [ ] Sandbox shell/files, bot memory, desktop authentication, user isolation, expiry, and cleanup are verified.
-- [ ] Usage limits reject work consistently before expensive provider operations.
+- Usage scope removed: no per-user allowances or usage ledger. Preserve model output/step limits and sandbox idle/retention settings.
 - [ ] Web and worker errors reach monitoring with useful stack traces and without chat content, tool payloads, secrets, or signed URLs.
 - [ ] Fresh setup instructions list required accounts, hardware, model downloads, ports, credentials, and any remaining external services.
 
 ## Constraints and open decisions
 
-- One command means multiple coordinated services; not a single container. Configuration, model downloads, and payment-provider setup may precede startup.
+- One command means multiple coordinated services; not a single container. Configuration and model downloads may precede startup.
 - OrbStack availability does not prove E2B compatibility. Verify CPU architecture, Linux/KVM requirements, and nested virtualization; a separate Linux sandbox host may be necessary.
 - Ollama's runtime and model licenses are separate. Select a model by hardware capacity and actual agent/tool performance.
-- Lago replaces billing infrastructure, not payment networks. Verify community-edition features and license obligations before adopting it.
+- Lago adoption is canceled. Operators supply and pay for inference/sandbox providers directly.
 - GlitchTip compatibility with Sentry SDKs does not guarantee parity for every logging, tracing, or source-map feature currently used.
 - Self-hosted Trigger.dev chat APIs and SDK versions must be verified together; existing cloud workers are not automatically launched by the web image.
 - Hindsight memory and a visual workflow builder remain outside this migration scope; the reference lists them as future work.
@@ -141,3 +141,15 @@ Implement each service on its named branch when authorized. Integrate completed 
 - Two previous component studies remain development-only at `/ui-prototype`; source provenance and integration boundaries are in [UI component study](ui-component-study.md).
 
 - Collapsed-sidebar fix (2026-10-27): replaced the clipped inline account footer with a compact account menu; aligned collapsed header controls and chat icon heights. Added account-menu checks covering collapsed/expanded/mobile rendering and signout success/failure. Typecheck, focused lint, workspace/search/account regressions, production image build, and healthy Compose startup passed. Browser-verified expanded/collapsed layouts, account-menu opening/Escape dismissal, and that all collapsed header/footer controls fit inside the rail. Existing user session and collapsed preference were preserved; signout was tested with stubs only.
+
+### Billing and usage removal — implemented; local checks passed 2026-10-27
+
+- Branch: `removal/billing-usage`, created from `migration/billing-lago` and fast-forwarded to local `main` with user authorization. Earlier billing/usage progress above is historical and superseded here.
+- Removed the Clerk billing dependency/identity link, paid web/worker/client gates, entitlement API, pricing/usage pages, upgrade prompts, usage storage declarations, model/sandbox metering and usage worker schedules. No billing events or Lago integration existed to retain.
+- Signed-in users can use all features. Session validation, ownership filters, worker owner existence, token scopes, input validation, sandbox failure cleanup, output-token and tool-step limits remain.
+- Sandbox startup uses native one-minute idle stopping and 24-hour retention/deletion settings instead of metered leases. Per-user allowances, bot-count limits and fixed metered-session caps are removed; provider charges remain the operator's responsibility.
+- No live schema push or data deletion: legacy usage tables and billing-link columns may remain unused until reviewed cleanup. Existing worker deployments must be redeployed; old schedules are not changed remotely by these source edits.
+- Passed: typecheck; focused application/test ESLint; session, bot CRUD, chat/query/search, group, AI-chat/handoff, desktop, workspace, account-menu, sandbox lifecycle/tools, Sentry and deployment regressions (provider boundaries stubbed).
+- Passed on OrbStack `orbstack`, Docker 29.8.2: Node.js 24 production image build, healthy Compose web/PostgreSQL startup, live signup/signin/signout/session-expiry/origin/immutable-identity/cross-user-denial checks, and 404 responses for removed billing routes. Disposable accounts/fixtures were cleaned up; existing volumes and schema were preserved.
+- Full lint reports 32 errors and 11 warnings in unchanged skill scripts and UI components; focused lint passes. Image installation reports 31 dependency vulnerabilities (7 low, 11 moderate, 13 high); dependency remediation is outside this removal.
+- Unverified: browser interaction, real provider-backed agent/desktop execution and native sandbox lifecycle behavior. No worker or production deployment. Delivery is tracked in Git history.

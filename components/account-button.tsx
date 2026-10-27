@@ -1,12 +1,10 @@
 "use client"
 
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import {
   ChevronsUpDownIcon,
   LogOutIcon,
-  ChartNoAxesCombinedIcon,
   UserRoundIcon,
 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
@@ -25,7 +23,7 @@ import {
 export function AccountButton() {
   const { data } = authClient.useSession()
   const router = useRouter()
-  const { state, isMobile, setOpenMobile } = useSidebar()
+  const { state, isMobile } = useSidebar()
   const collapsed = state === "collapsed" && !isMobile
   const [error, setError] = useState("")
   const [pending, setPending] = useState(false)
@@ -82,13 +80,6 @@ export function AccountButton() {
             </span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            render={<Link href="/usage" />}
-            onClick={() => setOpenMobile(false)}
-          >
-            <ChartNoAxesCombinedIcon aria-hidden="true" />
-            Usage
-          </DropdownMenuItem>
           <DropdownMenuItem
             aria-label="Sign out"
             disabled={pending}

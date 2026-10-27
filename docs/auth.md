@@ -7,9 +7,10 @@ is required. Set a stable random `BETTER_AUTH_SECRET` (at least 32 characters) a
 for remote hosting. Never build the signing secret into the image.
 
 Run the documented `docker compose run --rm --build db-tools` schema push before
-starting the web image. This adds `auth_user`, `auth_session`, `auth_account`, and
-`auth_verification`; it does not reset existing application data. Review any
-unexpected destructive proposal. Back up the full database, including auth tables.
+starting the web image. Fresh setup creates `auth_user`, `auth_session`, `auth_account`, and
+`auth_verification`. Existing installations may be offered removal of legacy
+billing/usage tables and columns; back up and explicitly review destructive proposals.
+No live database cleanup was performed by the source removal. Back up the full database, including auth tables.
 
 Sign up at `/sign-up`, sign in at `/sign-in`, and sign out from the sidebar.
 Passwords require 12–128 characters. Better Auth handles password hashing, session
@@ -17,46 +18,32 @@ expiry/revocation, secure cookies, origin checks, and rate limiting (enabled in 
 Sessions are validated against PostgreSQL; cookie session caching is disabled.
 The Next.js `nextCookies` plugin forwards cookie updates from server actions.
 Authenticated visitors to sign-in/signup are redirected home. Identity-only
-queries use `requireSession`; paid actions use `getAccess` separately, so billing
-failures cannot block ordinary authenticated pages. Client gates use the native
-Better Auth session plus an advisory entitlement lookup.
+queries and actions use `requireSession`. There are no paid gates or entitlement lookups.
 Email/password registration does not verify mailbox ownership. Email delivery,
 password recovery, OAuth, and MFA are not configured in this migration.
 
-## Ownership and temporary billing boundary
+## Ownership
 
 Application ownership uses the Better Auth user's immutable `id` everywhere,
-including worker-side paid checks and usage accounting. Signup accepts no ownership
-ID or billing link. Existing Clerk users, passwords, sessions, bots, chats, usage,
-and subscriptions are **not automatically migrated or linked by email**.
+including worker-side sandbox checks. Signup accepts no ownership ID. Legacy
+users, passwords, sessions, bots, and chats are **not automatically migrated or linked by email**.
 Existing application rows keep their original owner IDs and remain inaccessible
 to new accounts. Do not relabel owners without a reviewed identity migration.
 
-Until `migration/billing-lago`, `requirePaidUser` looks up `auth_user.clerk_user_id`
-by the trusted application owner ID, then checks Clerk Billing using that mapping.
-Missing/deleted users and missing mappings are denied before any Clerk request.
-The field is unique, excluded from API input/output, and may only be written by an
-operator after independently verifying both identities. There is no linking UI or
-automatic data transfer. A billing mapping alone does not transfer legacy data.
-Keep `CLERK_SECRET_KEY` in web and worker runtime environments only when using this
-bridge. New accounts remain unpaid; there is no new-subscription checkout until
-Lago integration. Billing-provider failures deny paid operations.
-
-Workers need database access and their existing server credentials; they do not
-accept a user ID from the browser. Chat owners are loaded from database joins,
-and the paid check verifies that owner exists in Better Auth before execution.
-Web actions retain their existing ownership filters, validation, token scopes,
-and usage limits. Client entitlement checks are advisory only.
+Workers need database access and their existing server credentials. Chat owners
+are loaded from database joins with `auth_user`; browser-supplied ownership IDs
+are not accepted. Web actions retain ownership filters, validation and token
+scopes. Signed-in users have feature access without billing or usage checks.
 
 ## Verification
 
 `npm run auth:check` checks the session boundary with stubbed dependencies.
 `node scripts/check-auth.mjs` checks public pages and signed-out redirects against
 a running web service. `npm run auth:live` checks real signup, password login,
-session revocation/expiry, protected routes, forbidden origins, and server-owned
-fields against local Compose. It creates temporary users and removes only those
+session revocation/expiry, protected routes, forbidden origins, and immutable
+identity against local Compose. It creates temporary users and removes only those
 users afterward. Existing chat/action regression checks test cross-user rejection
-with provider boundaries stubbed; they do not prove live paid agent execution.
+with provider boundaries stubbed; they do not prove live agent execution.
 
 Official references: [installation](https://www.better-auth.com/docs/installation),
 [core schema and server-owned fields](https://www.better-auth.com/docs/concepts/database).

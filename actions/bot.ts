@@ -1,23 +1,13 @@
 "use server"
 
 import { logger } from "@sentry/core"
-import { and, eq, notExists, sql } from "drizzle-orm"
-import { getAccess } from "@/lib/session"
-import { BILLING_ERROR } from "@/lib/billing"
+import { and, eq, notExists } from "drizzle-orm"
+import { requireSession } from "@/lib/session"
 import { revalidatePath } from "next/cache"
 import { DaytonaNotFoundError, type Sandbox } from "@daytona/sdk"
 
 import { db } from "@/lib/db"
-import {
-  reserveSandboxCreation,
-  closeSandboxLease,
-} from "@/lib/metered-sandbox"
-import {
-  SANDBOX_TTL_MINUTES,
-  STORAGE_TTL_MINUTES,
-  sandboxCost,
-  UsageError,
-} from "@/lib/usage-policy"
+import { STORAGE_TTL_MINUTES } from "@/lib/sandbox"
 import { getDaytona } from "@/lib/daytona"
 import {
   bots,
@@ -28,8 +18,7 @@ import {
 } from "@/lib/db/schema"
 
 export async function createBot(input: unknown) {
-  const { userId, paid } = await getAccess()
-  if (!paid) return { error: BILLING_ERROR }
+  const { userId } = await requireSession()
   const parsed = createBotSchema.safeParse(input)
   if (!parsed.success) {
     return { error: "Check the bot details and try again." }
@@ -37,20 +26,16 @@ export async function createBot(input: unknown) {
 
   let stage = "create sandbox"
   let sandbox: Sandbox | undefined
-  let lease: Awaited<ReturnType<typeof reserveSandboxCreation>> | undefined
   try {
-    lease = await reserveSandboxCreation(userId)
     sandbox = await getDaytona().create(
       {
-        name: lease.name,
-        ttlMinutes: SANDBOX_TTL_MINUTES,
+        ttlMinutes: STORAGE_TTL_MINUTES,
         autoStopInterval: 1,
         autoDeleteInterval: STORAGE_TTL_MINUTES,
         public: false,
       },
       { timeout: 60 }
     )
-    sandboxCost(sandbox.cpu, sandbox.memory, sandbox.disk, sandbox.gpu)
     stage = "create MEMORY.md"
     await sandbox.fs.uploadFile(Buffer.alloc(0), "MEMORY.md", 60)
     stage = "stop sandbox"
@@ -68,9 +53,6 @@ export async function createBot(input: unknown) {
         .values({ userId, kind: "direct" })
         .returning({ id: chats.id })
       await tx.insert(chatMembers).values({ chatId: chat.id, botId: bot.id })
-      await tx.execute(
-        sql`UPDATE usage_ledger SET closed_at=now(), settled_at=now() WHERE id=${lease!.id}`
-      )
     })
   } catch (error) {
     logger.error("Bot creation failed", {
@@ -84,19 +66,8 @@ export async function createBot(input: unknown) {
         logger.error("Bot sandbox cleanup failed")
       }
     }
-    if (lease) {
-      try {
-        await closeSandboxLease(lease.id)
-      } catch {
-        logger.warn("Sandbox lease cleanup will retry")
-      }
-    }
     return {
-      error:
-        error instanceof UsageError
-          ? error.message
-          : "Could not create your bot. Please try again.",
-      usageLimit: error instanceof UsageError,
+      error: "Could not create your bot. Please try again.",
     }
   }
 
@@ -106,8 +77,7 @@ export async function createBot(input: unknown) {
 }
 
 export async function updateBot(botId: unknown, input: unknown) {
-  const { userId, paid } = await getAccess()
-  if (!paid) return { error: BILLING_ERROR }
+  const { userId } = await requireSession()
   const id = insertBotSchema.shape.id.unwrap().safeParse(botId)
   const parsed = createBotSchema.safeParse(input)
   if (!id.success || !id.data || !parsed.success) {
@@ -132,8 +102,7 @@ export async function updateBot(botId: unknown, input: unknown) {
 }
 
 export async function deleteBot(botId: unknown) {
-  const { userId, paid } = await getAccess()
-  if (!paid) return { error: BILLING_ERROR }
+  const { userId } = await requireSession()
   const id = insertBotSchema.shape.id.unwrap().safeParse(botId)
   if (!id.success || !id.data)
     return { error: "Invalid bot. Refresh the page and try again." }

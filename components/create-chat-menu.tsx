@@ -1,7 +1,5 @@
 "use client"
 
-import { useEntitlement } from "@/lib/auth-client"
-import { showUpgradeToast } from "@/components/upgrade-toast"
 import { useState } from "react"
 import { PlusIcon, UsersIcon } from "lucide-react"
 import { BotDialog } from "@/components/bot-dialog"
@@ -18,7 +16,6 @@ import {
 import type { ChatBot } from "@/queries/chats"
 
 export function CreateChatMenu({ bots }: { bots: ChatBot[] }) {
-  const { paid } = useEntitlement()
   const [groupOpen, setGroupOpen] = useState(false)
   return (
     <div className="flex">
@@ -50,7 +47,6 @@ export function CreateChatMenu({ bots }: { bots: ChatBot[] }) {
               </DialogTrigger>
               <DropdownMenuItem
                 onClick={() => {
-                  if (!paid) return showUpgradeToast()
                   setGroupOpen(true)
                 }}
               >

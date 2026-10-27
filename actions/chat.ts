@@ -1,8 +1,7 @@
 "use server"
 
 import { logger } from "@sentry/core"
-import { getAccess } from "@/lib/session"
-import { BILLING_ERROR } from "@/lib/billing"
+import { requireSession } from "@/lib/session"
 import { auth as triggerAuth, configure } from "@trigger.dev/sdk"
 import { chat, defaultStorage } from "@trigger.dev/sdk/ai"
 import { z } from "zod"
@@ -16,8 +15,7 @@ const startSession = chat.createStartSessionAction("chat-agent")
 const loadTranscript = chat.createLoadTranscriptAction(defaultStorage)
 
 async function authorizeChat(chatId: string) {
-  const { paid } = await getAccess()
-  if (!paid) throw new Error(BILLING_ERROR)
+  await requireSession()
   z.string().min(1).max(100).parse(chatId)
   if (!(await getChat(chatId))) throw new Error("Chat not found.")
 }

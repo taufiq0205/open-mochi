@@ -30,12 +30,9 @@ do not use `down -v` unless you intend to delete them.
 
 Required external services in this phase:
 
-- **Clerk Billing (temporary)**: `CLERK_SECRET_KEY` is needed only for operator-linked
-  legacy paid accounts. Authentication is local Better Auth; see [auth setup](docs/auth.md).
-  New accounts are unpaid until the Lago migration.
 - **Trigger.dev Cloud**: `TRIGGER_SECRET_KEY` and a separately deployed worker.
   Replace the reference project ID in `trigger.config.ts` with your own. Deploy with
-  `npx trigger.dev@4.8.1 deploy`; configure `DATABASE_URL`, `CLERK_SECRET_KEY`,
+  `npx trigger.dev@4.8.1 deploy`; configure `DATABASE_URL`,
   `DEEPSEEK_API_KEY`, and `DAYTONA_API_KEY` in that worker environment too.
   Compose starts web and PostgreSQL; it does not deploy or run a worker.
   Cloud workers cannot reach the private Compose database. Agent execution requires
@@ -48,6 +45,19 @@ Required external services in this phase:
 Keep secrets in ignored `.env`. Only the optional public Sentry
 DSN is a build argument; changing it requires rebuilding the image. Server secrets
 are runtime environment values and are excluded from the build context.
+
+Authentication is local Better Auth; see [auth setup](docs/auth.md). All signed-in
+users can use bots, chats, and sandboxes. There are no subscriptions, payment
+providers, billing events, usage ledgers, or per-user allowances. Operators pay
+external providers directly. Sandboxes retain native one-minute idle stopping
+and 24-hour deletion/retention settings; no metered session lease is enforced.
+
+Existing installations: the schema no longer declares `usage_periods`,
+`usage_ledger`, or `auth_user.clerk_user_id`. No database changes are automatic.
+Back up and explicitly review any schema push that proposes dropping them;
+existing unused tables/columns can remain until an approved cleanup. Remove any
+obsolete Clerk secret from your ignored environment and redeploy workers to
+remove old billing checks and usage schedules.
 
 ## Checks
 
@@ -63,8 +73,8 @@ node scripts/check-auth.mjs
 ```
 
 `/healthz` checks the web process only; it does not check authentication, database,
-workers, billing, inference, or sandboxes. Real sign-in and cross-user authorization,
-chat/tool execution, desktop access, billing and telemetry require separate live checks.
+workers, inference, or sandboxes. Real sign-in and cross-user authorization,
+chat/tool execution, desktop access and telemetry require separate live checks.
 
 The container uses [Next.js standalone output](https://nextjs.org/docs/app/api-reference/config/next-config-js/output).
 Later service replacements belong on the branches assigned in [docs/plan.md](docs/plan.md).
@@ -82,7 +92,6 @@ copied automatically; export and rehearse restoration separately before cutover.
 
 ```sh
 docker compose run --rm db-tools npm run db:check
-docker compose run --rm db-tools node scripts/check-usage.mjs --live
 ```
 
 Create a backup outside the repository (contains private application data):

@@ -1,9 +1,6 @@
 "use client"
 
-import { useEntitlement } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
-import { BILLING_ERROR } from "@/lib/billing"
-import { showUpgradeToast, showUsageToast } from "@/components/upgrade-toast"
 
 import { useState, useTransition, type ReactNode } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -86,7 +83,6 @@ export function BotDialog({
   bot?: CreateBotInput & { id: string }
 }) {
   const [open, setOpen] = useState(false)
-  const { paid } = useEntitlement()
   const router = useRouter()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string>()
@@ -101,16 +97,12 @@ export function BotDialog({
   })
 
   function onDelete() {
-    if (!paid) return showUpgradeToast()
     if (!bot) return
     setDeleteError(undefined)
     startTransition(async () => {
       try {
         const result = await deleteBot(bot.id)
         if (result.error) {
-          if (result.error === BILLING_ERROR) showUpgradeToast()
-          if ("usageLimit" in result && result.usageLimit)
-            showUsageToast(result.error)
           setDeleteError(result.error)
           return
         }
@@ -126,7 +118,6 @@ export function BotDialog({
   }
 
   function onSubmit(values: CreateBotInput) {
-    if (!paid) return showUpgradeToast()
     form.clearErrors("root")
     startTransition(async () => {
       try {
@@ -134,9 +125,6 @@ export function BotDialog({
           ? await updateBot(bot.id, values)
           : await createBot(values)
         if (result.error) {
-          if (result.error === BILLING_ERROR) showUpgradeToast()
-          if ("usageLimit" in result && result.usageLimit)
-            showUsageToast(result.error)
           form.setError("root", { message: result.error })
           return
         }
@@ -160,7 +148,7 @@ export function BotDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (pending) return
-        if (nextOpen && !paid) return showUpgradeToast()
+
         form.reset(bot ?? { ...defaults, avatar: crypto.randomUUID() })
         setOpen(nextOpen)
       }}

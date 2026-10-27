@@ -27,7 +27,7 @@ Two development-only drafts at `/ui-prototype?variant=a` and `?variant=b`. These
 
 Fixture activity uses the upstream demonstration timers. It does not measure real model reasoning or execute tools. Text submission, creation, error/retry, search, and file previews use local memory only. The generated document is sample output, not operational setup guidance.
 
-Production integration must retain existing authorization, ownership, usage checks, streaming transport, group handoffs, tool errors, and screenshot filtering. Do not replace those paths with the fixture renderer. Approval prompts, connectors, new model selection, and file upload were not added because this task has no corresponding backend change.
+Production integration must retain existing authorization, ownership, streaming transport, group handoffs, tool errors, and screenshot filtering. Do not replace those paths with the fixture renderer. Approval prompts, connectors, new model selection, and file upload were not added because this task has no corresponding backend change.
 
 ## Local checks
 

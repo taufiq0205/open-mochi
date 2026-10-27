@@ -2,9 +2,6 @@
 
 import { logger } from "@sentry/core"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useEntitlement } from "@/lib/auth-client"
-import { BILLING_ERROR } from "@/lib/billing"
-import { showUpgradeToast, showUsageToast } from "@/components/upgrade-toast"
 import type RFB from "@novnc/novnc"
 
 import { connectDesktop } from "@/actions/desktop"
@@ -25,7 +22,6 @@ export function SandboxDesktop({
   chatId: string
   name: string
 }) {
-  const { paid } = useEntitlement()
   const preview = useRef<HTMLDivElement>(null)
   const fullscreenTarget = useRef<HTMLDivElement | null>(null)
   const screen = useRef<HTMLDivElement | null>(null)
@@ -38,10 +34,6 @@ export function SandboxDesktop({
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    if (!paid) {
-      showUpgradeToast()
-      return
-    }
     let disposed = false
     const host = document.createElement("div")
     host.className = "size-full"
@@ -57,9 +49,6 @@ export function SandboxDesktop({
         ])
         if (disposed) return
         if (!result.url) {
-          if (result.error === BILLING_ERROR) showUpgradeToast()
-          if ("usageLimit" in result && result.usageLimit)
-            showUsageToast(result.error)
           setStatus("error")
           setError(
             result.error ?? "Could not connect to the desktop. Please retry."
@@ -102,7 +91,7 @@ export function SandboxDesktop({
       host.remove()
       screen.current = null
     }
-  }, [chatId, attempt, paid])
+  }, [chatId, attempt])
 
   // Move the existing canvas host; keep its WebSocket and remote session alive.
   const placeScreen = useCallback((target: HTMLDivElement | null) => {
@@ -114,13 +103,6 @@ export function SandboxDesktop({
       if (target) client.current.focus()
     }
   }, [])
-
-  if (!paid)
-    return (
-      <div className="p-4">
-        <Button onClick={showUpgradeToast}>Unlock sandbox desktop</Button>
-      </div>
-    )
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto bg-muted/15 p-3 sm:p-4">
