@@ -1,8 +1,8 @@
 # open-mochi
 
-A self-hosted AI workspace for individual and group chats, with persistent bot
-memory, sandbox tools, and browser-accessible Linux desktops. Based on
-[Mochi](https://github.com/taufiq0205/mochi).
+An open-source, self-hosted alternative to my project
+[Mochi](https://github.com/taufiq0205/mochi), with individual and group chats,
+persistent bot memory, sandbox tools, and browser-accessible Linux desktops.
 
 Runs locally with Docker Compose: Next.js, Better Auth, PostgreSQL, self-hosted
 Trigger.dev, and OpenSandbox. Chat uses the DeepSeek API; Sentry is optional.
