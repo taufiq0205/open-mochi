@@ -2,8 +2,11 @@ import { defineConfig } from "@trigger.dev/sdk"
 import { esbuildPlugin } from "@trigger.dev/build/extensions"
 import { sentryEsbuildPlugin } from "@sentry/esbuild-plugin"
 
+if (!process.env.TRIGGER_PROJECT_REF)
+  throw new Error("TRIGGER_PROJECT_REF is required")
+
 export default defineConfig({
-  project: "proj_qtakyxqresfqivsohnjn",
+  project: process.env.TRIGGER_PROJECT_REF,
   runtime: "node-24",
   logLevel: "log",
   // The max compute seconds a task is allowed to run. If the task run exceeds this duration, it will be stopped.
@@ -22,15 +25,17 @@ export default defineConfig({
   },
   dirs: ["trigger"],
   build: {
-    extensions: [
-      esbuildPlugin(
-        sentryEsbuildPlugin({
-          org: "taufiq-7m",
-          project: "mochi",
-          authToken: process.env.SENTRY_AUTH_TOKEN,
-        }),
-        { placement: "last", target: "deploy" }
-      ),
-    ],
+    extensions: process.env.SENTRY_AUTH_TOKEN
+      ? [
+          esbuildPlugin(
+            sentryEsbuildPlugin({
+              org: process.env.SENTRY_ORG,
+              project: process.env.SENTRY_PROJECT,
+              authToken: process.env.SENTRY_AUTH_TOKEN,
+            }),
+            { placement: "last", target: "deploy" }
+          ),
+        ]
+      : [],
   },
 })

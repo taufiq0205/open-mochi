@@ -1,0 +1,389 @@
+# Adapted from triggerdotdev/trigger.dev v4.8.1 (Apache-2.0); see docs/trigger.md.
+services:
+  trigger-webapp:
+    image: ghcr.io/triggerdotdev/trigger.dev:v4.8.1
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging:
+      &a1
+      driver: ${TRIGGER_PLATFORM_LOGGING_DRIVER:-local}
+      options:
+        max-size: ${TRIGGER_PLATFORM_LOGGING_MAX_SIZE:-20m}
+        max-file: ${TRIGGER_PLATFORM_LOGGING_MAX_FILES:-5}
+        compress: ${TRIGGER_PLATFORM_LOGGING_COMPRESS:-true}
+    ports:
+      - 127.0.0.1:8030:3000
+    depends_on:
+      trigger-postgres:
+        condition: service_healthy
+      trigger-redis:
+        condition: service_healthy
+      trigger-clickhouse:
+        condition: service_healthy
+      trigger-s2:
+        condition: service_started
+    networks:
+      - trigger-webapp
+      - trigger-supervisor
+    volumes:
+      - shared:/home/node/shared
+    user: root
+    command: sh -c "chown -R node:node /home/node/shared && exec
+      ./scripts/entrypoint.sh"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "http.get('http://localhost:3000/healthcheck', res =>
+          process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () =>
+          process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    environment:
+      APP_ORIGIN: ${TRIGGER_PLATFORM_APP_ORIGIN:-http://localhost:8030}
+      LOGIN_ORIGIN: ${TRIGGER_PLATFORM_LOGIN_ORIGIN:-http://localhost:8030}
+      API_ORIGIN: http://trigger-webapp:3000
+      ELECTRIC_ORIGIN: http://trigger-electric:3000
+      REALTIME_STREAMS_DEFAULT_VERSION: ${TRIGGER_PLATFORM_REALTIME_STREAMS_DEFAULT_VERSION:-v2}
+      REALTIME_STREAMS_S2_BASIN: ${TRIGGER_PLATFORM_REALTIME_STREAMS_S2_BASIN:-trigger-realtime}
+      REALTIME_STREAMS_S2_ENDPOINT: ${TRIGGER_PLATFORM_REALTIME_STREAMS_S2_ENDPOINT:-http://trigger-s2/v1}
+      REALTIME_STREAMS_S2_SKIP_ACCESS_TOKENS: ${TRIGGER_PLATFORM_REALTIME_STREAMS_S2_SKIP_ACCESS_TOKENS:-true}
+      REALTIME_STREAMS_S2_ACCESS_TOKEN: ${TRIGGER_PLATFORM_REALTIME_STREAMS_S2_ACCESS_TOKEN:-}
+      DATABASE_URL: ${TRIGGER_PLATFORM_DATABASE_URL:-postgresql://postgres:${TRIGGER_PLATFORM_POSTGRES_PASSWORD}@trigger-postgres:5432/main?schema=public&sslmode=disable}
+      DIRECT_URL: ${TRIGGER_PLATFORM_DIRECT_URL:-postgresql://postgres:${TRIGGER_PLATFORM_POSTGRES_PASSWORD}@trigger-postgres:5432/main?schema=public&sslmode=disable}
+      SESSION_SECRET: ${TRIGGER_PLATFORM_SESSION_SECRET:?Set TRIGGER_PLATFORM_SESSION_SECRET in infra/trigger/.env}
+      MAGIC_LINK_SECRET: ${TRIGGER_PLATFORM_MAGIC_LINK_SECRET:?Set TRIGGER_PLATFORM_MAGIC_LINK_SECRET in infra/trigger/.env}
+      MAGIC_LINK_SAME_BROWSER_REQUIRED: ${TRIGGER_PLATFORM_MAGIC_LINK_SAME_BROWSER_REQUIRED:-true}
+      BLOCKED_EMAIL_DOMAINS: ${TRIGGER_PLATFORM_BLOCKED_EMAIL_DOMAINS:-}
+      TURNSTILE_SITE_KEY: ${TRIGGER_PLATFORM_TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TRIGGER_PLATFORM_TURNSTILE_SECRET_KEY:-}
+      ENCRYPTION_KEY: ${TRIGGER_PLATFORM_ENCRYPTION_KEY:?Set TRIGGER_PLATFORM_ENCRYPTION_KEY in infra/trigger/.env}
+      PROVIDER_SECRET: ${TRIGGER_PLATFORM_PROVIDER_SECRET:?Set TRIGGER_PLATFORM_PROVIDER_SECRET in infra/trigger/.env}
+      COORDINATOR_SECRET: ${TRIGGER_PLATFORM_COORDINATOR_SECRET:?Set TRIGGER_PLATFORM_COORDINATOR_SECRET in infra/trigger/.env}
+      MANAGED_WORKER_SECRET: ${TRIGGER_PLATFORM_MANAGED_WORKER_SECRET:?Set TRIGGER_PLATFORM_MANAGED_WORKER_SECRET in infra/trigger/.env}
+      REDIS_HOST: trigger-redis
+      REDIS_PORT: 6379
+      REDIS_TLS_DISABLED: true
+      APP_LOG_LEVEL: info
+      DEV_OTEL_EXPORTER_OTLP_ENDPOINT: ${TRIGGER_PLATFORM_DEV_OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:8030/otel}
+      DEPLOY_REGISTRY_HOST: ${TRIGGER_PLATFORM_DOCKER_REGISTRY_URL:-host.docker.internal:5050}
+      DEPLOY_REGISTRY_NAMESPACE: ${TRIGGER_PLATFORM_DOCKER_REGISTRY_NAMESPACE:-trigger}
+      OBJECT_STORE_BASE_URL: ${TRIGGER_PLATFORM_OBJECT_STORE_BASE_URL:-http://trigger-minio:9000}
+      OBJECT_STORE_ACCESS_KEY_ID: ${TRIGGER_PLATFORM_OBJECT_STORE_ACCESS_KEY_ID:?Set TRIGGER_PLATFORM_OBJECT_STORE_ACCESS_KEY_ID in infra/trigger/.env}
+      OBJECT_STORE_SECRET_ACCESS_KEY: ${TRIGGER_PLATFORM_OBJECT_STORE_SECRET_ACCESS_KEY:?Set TRIGGER_PLATFORM_OBJECT_STORE_SECRET_ACCESS_KEY in infra/trigger/.env}
+      GRACEFUL_SHUTDOWN_TIMEOUT: 1000
+      NODE_MAX_OLD_SPACE_SIZE: ${TRIGGER_PLATFORM_NODE_MAX_OLD_SPACE_SIZE:-4096}
+      TRIGGER_BOOTSTRAP_ENABLED: 1
+      TRIGGER_BOOTSTRAP_WORKER_GROUP_NAME: bootstrap
+      TRIGGER_BOOTSTRAP_WORKER_TOKEN_PATH: /home/node/shared/worker_token
+      CLICKHOUSE_URL: ${TRIGGER_PLATFORM_CLICKHOUSE_URL:-http://${TRIGGER_PLATFORM_CLICKHOUSE_USER:-default}:${TRIGGER_PLATFORM_CLICKHOUSE_PASSWORD}@trigger-clickhouse:8123?secure=false}
+      CLICKHOUSE_LOG_LEVEL: ${TRIGGER_PLATFORM_CLICKHOUSE_LOG_LEVEL:-info}
+      RUN_REPLICATION_ENABLED: ${TRIGGER_PLATFORM_RUN_REPLICATION_ENABLED:-1}
+      RUN_REPLICATION_CLICKHOUSE_URL: ${TRIGGER_PLATFORM_RUN_REPLICATION_CLICKHOUSE_URL:-http://${TRIGGER_PLATFORM_CLICKHOUSE_USER:-default}:${TRIGGER_PLATFORM_CLICKHOUSE_PASSWORD}@trigger-clickhouse:8123}
+      RUN_REPLICATION_LOG_LEVEL: ${TRIGGER_PLATFORM_RUN_REPLICATION_LOG_LEVEL:-info}
+      INTERNAL_OTEL_TRACE_LOGGING_ENABLED: ${TRIGGER_PLATFORM_INTERNAL_OTEL_TRACE_LOGGING_ENABLED:-0}
+      TRIGGER_TELEMETRY_DISABLED: "1"
+      WHITELISTED_EMAILS: ${TRIGGER_PLATFORM_WHITELISTED_EMAILS:?Set WHITELISTED_EMAILS in infra/trigger/.env}
+  trigger-postgres:
+    image: postgres:${TRIGGER_PLATFORM_POSTGRES_IMAGE_TAG:-14}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a1
+    ports: []
+    volumes:
+      - postgres:/var/lib/postgresql/data/
+    networks:
+      - trigger-webapp
+    command:
+      - -c
+      - wal_level=logical
+    environment:
+      POSTGRES_USER: ${TRIGGER_PLATFORM_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${TRIGGER_PLATFORM_POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env - run
+        ./generate-secrets.sh}
+      POSTGRES_DB: ${TRIGGER_PLATFORM_POSTGRES_DB:-postgres}
+    healthcheck:
+      test:
+        - CMD
+        - pg_isready
+        - -U
+        - postgres
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  trigger-redis:
+    image: redis:${TRIGGER_PLATFORM_REDIS_IMAGE_TAG:-7}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a1
+    ports: []
+    volumes:
+      - redis:/data
+    networks:
+      - trigger-webapp
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+  trigger-electric:
+    image: electricsql/electric:${TRIGGER_PLATFORM_ELECTRIC_IMAGE_TAG:-1.2.4}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a1
+    depends_on:
+      trigger-postgres:
+        condition: service_healthy
+    networks:
+      - trigger-webapp
+    environment:
+      DATABASE_URL: ${TRIGGER_PLATFORM_DATABASE_URL:-postgresql://postgres:${TRIGGER_PLATFORM_POSTGRES_PASSWORD}@trigger-postgres:5432/main?schema=public&sslmode=disable}
+      ELECTRIC_INSECURE: true
+      ELECTRIC_USAGE_REPORTING: false
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3000/v1/health
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  trigger-clickhouse:
+    image: clickhouse/clickhouse-server:${TRIGGER_PLATFORM_CLICKHOUSE_IMAGE_TAG:-26.2}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a1
+    ports: []
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      CLICKHOUSE_USER: ${TRIGGER_PLATFORM_CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${TRIGGER_PLATFORM_CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env -
+        run ./generate-secrets.sh}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+      - ./clickhouse/data-paths.xml:/etc/clickhouse-server/config.d/data-paths.xml:ro
+      - ./clickhouse/override.xml:/etc/clickhouse-server/config.d/override.xml:ro
+      - ./clickhouse/users-override.xml:/etc/clickhouse-server/users.d/override.xml:ro
+    networks:
+      - trigger-webapp
+    healthcheck:
+      test:
+        - CMD
+        - clickhouse-client
+        - --host
+        - localhost
+        - --port
+        - "9000"
+        - --user
+        - ${TRIGGER_PLATFORM_CLICKHOUSE_USER:-default}
+        - --password
+        - ${TRIGGER_PLATFORM_CLICKHOUSE_PASSWORD}
+        - --query
+        - SELECT 1
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  trigger-registry:
+    image: registry:${TRIGGER_PLATFORM_REGISTRY_IMAGE_TAG:-2}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a1
+    ports:
+      - ${TRIGGER_PLATFORM_REGISTRY_PUBLISH_IP:-127.0.0.1}:5050:5000
+    networks:
+      - trigger-webapp
+    volumes:
+      - ./registry/auth.htpasswd:/auth/htpasswd:ro
+      - registry:/var/lib/registry
+    environment:
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --spider
+        - -q
+        - http://localhost:5000/
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  trigger-minio:
+    image: bitnamilegacy/minio:${TRIGGER_PLATFORM_MINIO_IMAGE_TAG:-latest}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a1
+    ports: []
+    networks:
+      - trigger-webapp
+    volumes:
+      - minio:/bitnami/minio/data
+    environment:
+      MINIO_ROOT_USER: ${TRIGGER_PLATFORM_MINIO_ROOT_USER:-${TRIGGER_PLATFORM_OBJECT_STORE_ACCESS_KEY_ID:-admin}}
+      MINIO_ROOT_PASSWORD: ${TRIGGER_PLATFORM_MINIO_ROOT_PASSWORD:-${TRIGGER_PLATFORM_OBJECT_STORE_SECRET_ACCESS_KEY:?Set
+        OBJECT_STORE_SECRET_ACCESS_KEY in .env - run ./generate-secrets.sh}}
+      MINIO_DEFAULT_BUCKETS: packets
+      MINIO_BROWSER: on
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:9000/minio/health/live
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+  trigger-s2-init:
+    image: busybox:${TRIGGER_PLATFORM_BUSYBOX_IMAGE_TAG:-1.37}
+    restart: no
+    logging: *a1
+    environment:
+      REALTIME_STREAMS_S2_BASIN: ${TRIGGER_PLATFORM_REALTIME_STREAMS_S2_BASIN:-trigger-realtime}
+    command:
+      - sh
+      - -c
+      - >
+        cat > /config/s2-spec.json <<JSON
+
+        {
+          "basins": [
+            {
+              "name": "$$REALTIME_STREAMS_S2_BASIN",
+              "config": { "create_stream_on_append": true, "create_stream_on_read": true }
+            }
+          ]
+        }
+
+        JSON
+    volumes:
+      - s2-config:/config
+    networks:
+      - trigger-webapp
+  trigger-s2:
+    image: ${TRIGGER_PLATFORM_S2_IMAGE:-ghcr.io/s2-streamstore/s2:latest@sha256:d6ded5ca7dd619fa7c946f06e39a98f9c95c6883c8bb884e5eaa129f232c920c}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a1
+    depends_on:
+      trigger-s2-init:
+        condition: service_completed_successfully
+    command:
+      - lite
+      - --init-file
+      - /config/s2-spec.json
+      - --local-root
+      - /data
+    user: 0:0
+    volumes:
+      - s2-config:/config
+      - s2:/data
+    networks:
+      - trigger-webapp
+  trigger-supervisor:
+    image: ghcr.io/triggerdotdev/supervisor:v4.8.1
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging:
+      &a2
+      driver: ${TRIGGER_PLATFORM_LOGGING_DRIVER:-local}
+      options:
+        max-size: ${TRIGGER_PLATFORM_LOGGING_MAX_SIZE:-20m}
+        max-file: ${TRIGGER_PLATFORM_LOGGING_MAX_FILES:-5}
+        compress: ${TRIGGER_PLATFORM_LOGGING_COMPRESS:-true}
+    depends_on:
+      trigger-webapp:
+        condition: service_healthy
+      trigger-docker-proxy:
+        condition: service_healthy
+    networks:
+      - trigger-supervisor
+      - trigger-docker-proxy
+      - trigger-webapp
+    volumes:
+      - shared:/home/node/shared
+    user: root
+    command: sh -c "chown -R node:node /home/node/shared && exec /usr/bin/dumb-init
+      -- pnpm run --filter supervisor start"
+    environment:
+      TRIGGER_WORKER_TOKEN: file:///home/node/shared/worker_token
+      MANAGED_WORKER_SECRET: ${TRIGGER_PLATFORM_MANAGED_WORKER_SECRET:?Set TRIGGER_PLATFORM_MANAGED_WORKER_SECRET in infra/trigger/.env}
+      TRIGGER_API_URL: http://trigger-webapp:3000
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${TRIGGER_PLATFORM_OTEL_EXPORTER_OTLP_ENDPOINT:-http://trigger-webapp:3000/otel}
+      TRIGGER_WORKLOAD_API_DOMAIN: trigger-supervisor
+      TRIGGER_WORKLOAD_API_PORT_EXTERNAL: 8020
+      DEBUG: "0"
+      ENFORCE_MACHINE_PRESETS: 1
+      TRIGGER_DEQUEUE_INTERVAL_MS: 1000
+      DOCKER_HOST: tcp://trigger-docker-proxy:2375
+      DOCKER_RUNNER_NETWORKS: open-mochi-trigger-webapp,open-mochi-trigger-supervisor,open-mochi_default
+      DOCKER_REGISTRY_URL: ${TRIGGER_PLATFORM_DOCKER_REGISTRY_URL:-host.docker.internal:5050}
+      DOCKER_REGISTRY_USERNAME: ${TRIGGER_PLATFORM_DOCKER_REGISTRY_USERNAME:-}
+      DOCKER_REGISTRY_PASSWORD: ${TRIGGER_PLATFORM_DOCKER_REGISTRY_PASSWORD:-}
+      DOCKER_AUTOREMOVE_EXITED_CONTAINERS: "1"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "http.get('http://localhost:8020/health', res =>
+          process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () =>
+          process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+  trigger-docker-proxy:
+    image: tecnativa/docker-socket-proxy:${TRIGGER_PLATFORM_DOCKER_PROXY_IMAGE_TAG:-latest}
+    restart: ${TRIGGER_PLATFORM_RESTART_POLICY:-unless-stopped}
+    logging: *a2
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - trigger-docker-proxy
+    environment:
+      - LOG_LEVEL=info
+      - POST=1
+      - CONTAINERS=1
+      - IMAGES=1
+      - INFO=1
+      - NETWORKS=1
+    healthcheck:
+      test:
+        - CMD
+        - nc
+        - -z
+        - 127.0.0.1
+        - "2375"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+volumes:
+  clickhouse: {}
+  postgres: {}
+  redis: {}
+  shared: {}
+  minio: {}
+  s2: {}
+  s2-config: {}
+  registry: {}
+networks:
+  trigger-docker-proxy:
+    name: open-mochi-trigger-docker-proxy
+  trigger-supervisor:
+    name: open-mochi-trigger-supervisor
+  trigger-webapp:
+    name: open-mochi-trigger-webapp

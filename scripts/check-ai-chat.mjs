@@ -86,6 +86,10 @@ assert.equal(
   undefined,
   "Vercel main must not select a Trigger preview branch"
 )
+assert.equal(
+  apiClientManager.baseURL,
+  process.env.TRIGGER_API_URL ?? "http://localhost:8030"
+)
 if (previousVercelBranch === undefined) delete process.env.VERCEL_GIT_COMMIT_REF
 else process.env.VERCEL_GIT_COMMIT_REF = previousVercelBranch
 

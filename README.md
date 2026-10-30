@@ -13,6 +13,7 @@ GPU or model download is required in this phase; inference remains external.
 
 ```sh
 cp .env.example .env
+# Complete the platform secret/registry setup in docs/trigger.md first.
 # Set POSTGRES_PASSWORD and BETTER_AUTH_SECRET (separate openssl rand -hex 32 values).
 # Set BETTER_AUTH_URL to the browser-facing origin and provider credentials.
 # Initialize a fresh database first; review any proposed changes:
@@ -28,15 +29,10 @@ network and a named `next-cache` volume for the Next.js cache. PostgreSQL data l
 with the external sandbox provider. `docker compose down` retains volumes;
 do not use `down -v` unless you intend to delete them.
 
-Required external services in this phase:
+Agent platform and external services:
 
-- **Trigger.dev Cloud**: `TRIGGER_SECRET_KEY` and a separately deployed worker.
-  Replace the reference project ID in `trigger.config.ts` with your own. Deploy with
-  `npx trigger.dev@4.8.1 deploy`; configure `DATABASE_URL`,
-  `DEEPSEEK_API_KEY`, and `DAYTONA_API_KEY` in that worker environment too.
-  Compose starts web and PostgreSQL; it does not deploy or run a worker.
-  Cloud workers cannot reach the private Compose database. Agent execution requires
-  a worker with secure network access to this database; never publish it openly.
+- **Self-hosted Trigger.dev**: follow [platform and worker setup](docs/trigger.md)
+  before startup. Compose runs the platform; worker deployment is a separate step.
 - **DeepSeek** and **Daytona**: API keys, provider credits, sandbox access and quotas.
 - **Sentry** (optional): your own `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN`.
   Blank DSNs disable event delivery. Source-map uploads are not configured in Docker;

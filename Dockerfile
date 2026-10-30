@@ -7,7 +7,9 @@ RUN npm ci
 FROM dependencies AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SENTRY_DSN
+ARG NEXT_PUBLIC_TRIGGER_API_URL=http://localhost:8030
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+ENV NEXT_PUBLIC_TRIGGER_API_URL=$NEXT_PUBLIC_TRIGGER_API_URL
 COPY . .
 # Route collection initializes auth/database without connecting; this key exists only in the build process.
 RUN DATABASE_URL=postgresql://build:build@localhost:5432/build BETTER_AUTH_URL=http://localhost:3000 \
