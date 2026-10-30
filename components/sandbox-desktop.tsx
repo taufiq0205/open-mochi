@@ -55,7 +55,9 @@ export function SandboxDesktop({
           )
           return
         }
-        connection = new RFB(host, result.url)
+        connection = new RFB(host, result.url, {
+          credentials: { password: result.password, username: "", target: "" },
+        })
         client.current = connection
         connection.scaleViewport = true
         connection.viewOnly = !fullscreenTarget.current
@@ -130,7 +132,7 @@ export function SandboxDesktop({
               : "Connecting"}
         </span>
       </div>
-      <div className="relative min-h-24 flex-1 overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+      <div className="relative aspect-[8/5] w-full shrink-0 overflow-hidden rounded-xl border border-border bg-background shadow-sm">
         <div ref={preview} className="absolute inset-0" />
         <Button
           variant="ghost"
