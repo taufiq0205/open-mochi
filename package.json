@@ -16,7 +16,8 @@
     "db:check": "node --conditions=react-server scripts/check-db.mjs",
     "deployment:check": "node scripts/check-deployment.mjs",
     "auth:check": "node scripts/check-session.mjs",
-    "auth:live": "node scripts/check-auth-live.mjs"
+    "auth:live": "node scripts/check-auth-live.mjs",
+    "trigger:check": "node scripts/check-trigger.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.64",

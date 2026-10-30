@@ -43,6 +43,7 @@ next-env.d.ts
 .neon
 
 .trigger
+/infra/trigger/registry/auth.htpasswd
 
 # local agent state and credentials
 /.omc/

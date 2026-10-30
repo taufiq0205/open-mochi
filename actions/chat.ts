@@ -9,7 +9,10 @@ import { z } from "zod"
 import { getChat } from "@/queries/chats"
 
 // Vercel's Git branch does not imply a Trigger.dev preview environment.
-configure({ previewBranch: process.env.TRIGGER_PREVIEW_BRANCH ?? "" })
+configure({
+  baseURL: process.env.TRIGGER_API_URL ?? "http://localhost:8030",
+  previewBranch: process.env.TRIGGER_PREVIEW_BRANCH ?? "",
+})
 
 const startSession = chat.createStartSessionAction("chat-agent")
 const loadTranscript = chat.createLoadTranscriptAction(defaultStorage)

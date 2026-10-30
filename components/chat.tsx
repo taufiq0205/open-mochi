@@ -66,6 +66,7 @@ export function Chat({
     ? selectedBotId
     : members?.[0]?.id
   const transport = useTriggerChatTransport<typeof chatAgent>({
+    baseURL: process.env.NEXT_PUBLIC_TRIGGER_API_URL ?? "http://localhost:8030",
     task: "chat-agent",
     clientData: { botId },
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),

@@ -1,5 +1,6 @@
 .git
 reference
+infra/trigger
 node_modules
 .next
 .env*
