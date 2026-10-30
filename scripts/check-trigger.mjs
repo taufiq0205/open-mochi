@@ -9,15 +9,62 @@ const config = JSON.parse(
   })
 )
 const s = config.services
+assert.equal(s["desktop-proxy"].build.target, "desktop-proxy")
+assert.ok(s["desktop-proxy"].healthcheck)
+assert.equal(
+  s["desktop-proxy"].environment.BETTER_AUTH_SECRET,
+  s.web.environment.BETTER_AUTH_SECRET
+)
+assert.equal(
+  s["desktop-proxy"].environment.BETTER_AUTH_URL,
+  s.web.environment.BETTER_AUTH_URL
+)
+assert.equal(s.opensandbox.image, "opensandbox/server:release-1.2.0")
+assert.equal(s.opensandbox.network_mode, "bridge")
+assert.ok(s.opensandbox.healthcheck)
+assert.equal(
+  s.opensandbox.environment.OPENSANDBOX_SERVER_API_KEY,
+  s.web.environment.OPEN_SANDBOX_API_KEY
+)
+assert.ok(
+  s.opensandbox.volumes.some(
+    (v) => v.type === "volume" && v.target === "/root/.opensandbox"
+  )
+)
+assert.ok(
+  s.opensandbox.volumes.some((v) => v.target === "/var/run/docker.sock")
+)
+assert.deepEqual(s["sandbox-image"].entrypoint, ["/bin/true"])
+assert.equal(s["sandbox-image"].network_mode, "none")
+const sandboxConfig = readFileSync(
+  new URL("../infra/opensandbox/config.toml", import.meta.url),
+  "utf8"
+)
+assert.match(sandboxConfig, /publish_host = "127.0.0.1"/)
+assert.match(sandboxConfig, /mode = "dns\+nft"/)
+assert.match(sandboxConfig, /disable_ipv6 = true/)
 for (const name of ["trigger-webapp", "trigger-supervisor"]) {
   assert.ok(s[name].image.endsWith(":v4.8.1"))
   assert.ok(s[name].healthcheck)
 }
 assert.equal(s.web.environment.TRIGGER_API_URL, "http://trigger-webapp:3000")
 assert.equal(
+  s["trigger-webapp"].environment.API_ORIGIN,
+  s["trigger-webapp"].environment.APP_ORIGIN,
+  "CLI project URLs must use the host-reachable platform origin"
+)
+assert.equal(
   s["trigger-supervisor"].environment.TRIGGER_API_URL,
   "http://trigger-webapp:3000"
 )
+for (const key of ["INTERNAL_API_ORIGIN", "STREAM_ORIGIN"]) {
+  assert.equal(
+    s["trigger-webapp"].environment[key],
+    "http://trigger-webapp:3000",
+    `${key} must be reachable from deployed worker containers`
+  )
+}
+assert.equal(s["trigger-webapp"].environment.INTERNAL_API_ORIGIN_ENABLED, "1")
 assert.equal(s["trigger-webapp"].environment.REDIS_HOST, "trigger-redis")
 assert.equal(
   new URL(s["trigger-webapp"].environment.DATABASE_URL).hostname,
@@ -42,7 +89,15 @@ assert.equal(
 for (const [name, service] of Object.entries(s)) {
   for (const port of service.ports ?? [])
     assert.equal(port.host_ip, "127.0.0.1", `${name} must bind loopback`)
-  if (!["web", "trigger-webapp", "trigger-registry"].includes(name))
+  if (
+    ![
+      "web",
+      "desktop-proxy",
+      "opensandbox",
+      "trigger-webapp",
+      "trigger-registry",
+    ].includes(name)
+  )
     assert.equal(service.ports?.length ?? 0, 0)
 }
 for (const name of [

@@ -6,6 +6,12 @@ import { z } from "zod"
 
 import { getChat } from "@/queries/chats"
 import { openSandbox } from "@/lib/sandbox"
+import {
+  sandboxConfig,
+  DESKTOP_PASSWORD_PATH,
+  sandboxFiles,
+} from "@/lib/opensandbox.mjs"
+import { sealDesktopTicket } from "@/lib/desktop-ticket.mjs"
 
 export async function connectDesktop(chatId: unknown) {
   const { userId } = await requireSession()
@@ -19,12 +25,25 @@ export async function connectDesktop(chatId: unknown) {
         error: "This bot has no desktop. Create a new bot to get a desktop.",
       }
     const sandbox = await openSandbox(userId, chat.botSandboxId)
-    await sandbox.computerUse.start()
-    const preview = await sandbox.getSignedPreviewUrl(6080, 300)
-    const url = new URL("/websockify", preview.url)
-    url.protocol = "wss:"
+    let target: URL
+    let password: string
+    try {
+      target = new URL(await sandbox.getEndpointUrl(6080))
+      target.pathname = target.pathname.replace(/\/$/, "") + "/websockify"
+      target.protocol = target.protocol === "http:" ? "ws:" : "wss:"
+      password = await sandboxFiles(sandbox).readFile(DESKTOP_PASSWORD_PATH, {
+        limit: 100,
+      })
+    } finally {
+      await sandbox.close()
+    }
+    const ticket = sealDesktopTicket(target.toString(), {
+      "OPEN-SANDBOX-API-KEY": sandboxConfig().apiKey,
+    })
+    const url = new URL(process.env.DESKTOP_PROXY_URL || "ws://localhost:3001")
+    url.searchParams.set("ticket", ticket)
     logger.info("Desktop connection prepared")
-    return { url: url.toString() }
+    return { url: url.toString(), password }
   } catch {
     logger.error("Desktop connection failed")
     return { error: "Could not connect to the desktop. Please retry." }

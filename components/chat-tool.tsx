@@ -10,6 +10,7 @@ import {
   ClockIcon,
   XIcon,
 } from "lucide-react"
+import { Task, TaskContent, TaskTrigger } from "@/components/ai-elements/task"
 import { CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
   Tool,
@@ -71,5 +72,55 @@ export function ChatTool({
         <ToolOutput output={output} errorText={part.errorText} />
       </ToolContent>
     </Tool>
+  )
+}
+
+export function ChatToolActivity({ parts }: { parts: ToolPart[] }) {
+  const running = parts.findLast(
+    (part) =>
+      part.state === "input-streaming" || part.state === "input-available"
+  )
+  const actions = `${parts.length} action${parts.length === 1 ? "" : "s"}`
+  const title = running ? `Working · ${actions}` : `${actions} completed`
+  const Icon = running ? CircleDashedIcon : CheckIcon
+  return (
+    <Task defaultOpen={false} className="my-1 min-w-0">
+      <TaskTrigger
+        title={title}
+        className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Icon
+          aria-hidden="true"
+          className={`size-3.5 shrink-0 ${running ? "animate-spin motion-reduce:animate-none" : ""}`}
+        />
+        <span role="status" className="shrink-0">
+          {title}
+        </span>
+        {running && (
+          <span className="truncate">
+            {getToolName(running).replace(/([a-z])([A-Z])/g, "$1 $2")}
+          </span>
+        )}
+        <ChevronDownIcon
+          aria-hidden="true"
+          className="ml-auto size-3.5 shrink-0 transition-transform group-aria-expanded:rotate-180 motion-reduce:transition-none"
+        />
+      </TaskTrigger>
+      <TaskContent className="max-h-80 overflow-y-auto pr-1 motion-reduce:animate-none">
+        {parts.map((part) => (
+          <ChatTool
+            key={part.toolCallId}
+            part={part}
+            output={
+              getToolName(part) === "viewScreen"
+                ? part.state === "output-available"
+                  ? "Screen inspected."
+                  : undefined
+                : part.output
+            }
+          />
+        ))}
+      </TaskContent>
+    </Task>
   )
 }

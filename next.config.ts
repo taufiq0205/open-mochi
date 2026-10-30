@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   experimental: {
     agentUpgrade: "security",
   },
-  serverExternalPackages: ["@daytona/sdk"],
+  serverExternalPackages: ["@alibaba-group/opensandbox"],
 }
 
 export default withSentryConfig(nextConfig, {

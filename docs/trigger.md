@@ -57,40 +57,68 @@ instance: Cloud sessions/transcripts, credentials and schedules are not migrated
 
 ## Deploy the worker
 
-The web image does not contain or deploy tasks. Authenticate a separate local CLI
+For OrbStack local builds, set `TRIGGER_PLATFORM_APP_ORIGIN=http://127.0.0.1:8030`
+in `infra/trigger/.env`, then recreate `trigger-webapp`. The host network below
+lets build-time indexing reach this loopback address; CLI 4.8.1 rewrites
+`localhost` to a LAN address that cannot reach loopback-only published ports.
+
+The web image does not contain or deploy tasks. CLI 4.8.1 local builds request
+registry credentials from the server unless `TRIGGER_DOCKER_USERNAME` and
+`TRIGGER_DOCKER_PASSWORD` are supplied. The server does not generate credentials
+for this custom registry (`registry_not_supported`); use the scoped exports below. Authenticate a separate local CLI
 profile against this instance, never the old Cloud project:
 
 ```sh
 npx trigger.dev@4.8.1 login -a http://localhost:8030 --profile open-mochi
 npx trigger.dev@4.8.1 whoami --profile open-mochi
 docker login host.docker.internal:5050 --username registry-user
+# One-time builder setup; Docker daemon registry settings do not configure BuildKit.
+docker buildx create --name open-mochi-trigger --driver docker-container \
+  --driver-opt network=host --buildkitd-config infra/trigger/buildkitd.toml
 ```
 
-In the project's **Production environment variables**, configure `DATABASE_URL`
+In the project's **Production environment variables**, configure `TRIGGER_PROJECT_REF`
+with the same project ref as root `.env`, and `DATABASE_URL`
 using the app's private `postgres:5432/mochi` database and its application password,
-plus `DEEPSEEK_API_KEY` and `DAYTONA_API_KEY`. Optional monitoring uses `SENTRY_DSN`.
+plus `DEEPSEEK_API_KEY` and `OPEN_SANDBOX_API_KEY`, `OPEN_SANDBOX_DOMAIN`, and `OPEN_SANDBOX_IMAGE` (see [sandbox setup](sandboxes.md)). Optional monitoring uses `SENTRY_DSN`.
 Do not copy platform database credentials into worker settings. The supervisor
 attaches run containers to `open-mochi_default` and its private control networks.
-Ensure the application database schema was initialized first.
+Ensure the application database schema was initialized first. The worker
+`DATABASE_URL` must match the web service's resolved database URL, including the
+application password; a placeholder password still allows deployment indexing
+but makes chat and scheduled cleanup fail at runtime.
 
 ```sh
 # Load root .env into the shell without printing it; project ref must be present.
 set -a
 . ./.env
 set +a
-npx trigger.dev@4.8.1 deploy --env prod --profile open-mochi --skip-sync-env-vars
+# Scope registry credentials to the deployment process; do not copy them into root .env.
+(
+  set +a
+  . ./infra/trigger/.env
+  export TRIGGER_DOCKER_USERNAME="$TRIGGER_PLATFORM_DOCKER_REGISTRY_USERNAME"
+  export TRIGGER_DOCKER_PASSWORD="$TRIGGER_PLATFORM_DOCKER_REGISTRY_PASSWORD"
+  npx trigger.dev@4.8.1 deploy --env prod --profile open-mochi --skip-sync-env-vars --local-build --push --network host --builder open-mochi-trigger
+)
 # Apply the new environment key and rebuild the browser endpoint:
 docker compose up -d --build web
 ```
 
 Retries remain three attempts with exponential backoff; task max duration remains
-one hour. The supervisor removes exited run containers. There are no application
-schedules after billing removal; no replacement schedules are introduced.
-Sandbox failure cleanup and native idle/retention settings remain in the existing
-Daytona integration. Removing run containers does not delete bot sandboxes.
+one hour. The supervisor removes exited run containers. The OpenSandbox migration adds a minute-by-minute idle pause task; confirm it
+is active after deploying. OpenSandbox itself enforces retention expiry. Removing run containers does not delete bot sandboxes.
 
 ## URLs and validation
 
+- The platform advertises `API_ORIGIN` using `TRIGGER_PLATFORM_APP_ORIGIN` (locally
+  `http://localhost:8030`), so the host CLI can resolve project/deployment URLs.
+  Do not advertise the container-only `trigger-webapp` hostname here.
+- Deployed workers use `INTERNAL_API_ORIGIN=http://trigger-webapp:3000` with
+  `INTERNAL_API_ORIGIN_ENABLED=1`, and `STREAM_ORIGIN=http://trigger-webapp:3000`.
+  Their loopback address belongs to the worker container, so the public host URL
+  cannot serve worker API/session-stream requests. These are platform settings;
+  `TRIGGER_API_URL` is reserved and cannot be set as a project worker variable.
 - Server actions use `http://trigger-webapp:3000` inside Compose; host processes use
   root `TRIGGER_API_URL=http://localhost:8030`.
 - Browser transport uses `NEXT_PUBLIC_TRIGGER_API_URL=http://localhost:8030`, baked
@@ -107,8 +135,21 @@ docker compose ps
 ```
 
 After provisioning, verify direct and group turns, streaming/reconnect, tool calls,
-one-turn handoffs, transcript persistence, worker restart/retry, denied cross-user
+bounded per-member handoffs, transcript persistence, worker restart/retry, denied cross-user
 access, and sandbox cleanup against real providers. A healthy platform alone does
 not prove these paths. Keep all platform volumes in backups; test recovery before
 production use. Source-map upload is opt-in with SENTRY_AUTH_TOKEN, SENTRY_ORG and
 SENTRY_PROJECT in the deployment shell.
+
+Deploy `trigger/sandboxes.ts` with the worker to register `pause-idle-opensandboxes`
+(every minute). Confirm activation in the self-hosted Production environment;
+source files alone do not activate a schedule. Without it, native 24-hour expiry
+still applies, but running sandboxes do not pause when idle. Workers must use a
+reachable OpenSandbox URL and the matching server key for this installation.
+
+Group recall checks the current bot's saved context, then consults unvisited group
+members when it is missing. Each member can receive the turn once and has one
+cached memory read per turn. The model is instructed to consult peers for missing context and to skip
+lookup for greetings and general questions. Tool results are explicitly
+retained for the active bot to avoid Trigger 4.8.1 / AI SDK 7 history-retention
+loss. The existing 20-step limit still bounds a turn, including large groups.

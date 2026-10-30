@@ -34,7 +34,7 @@ assert.equal(schema.insertBotSchema.safeParse(valid).success, false)
 let sandboxFailure
 let commitFailure = false
 const sandboxCalls = []
-class DaytonaNotFoundError extends Error {}
+
 const sandbox = {
   id: "sandbox_1",
   cpu: 1,
@@ -42,19 +42,20 @@ const sandbox = {
   disk: 3,
   gpu: 0,
   setTtl: async () => {},
-  fs: {
-    uploadFile: async (content, path) => {
+  files: {
+    writeFiles: async ([{ path, data: content }]) => {
       assert.equal(content.length, 0)
-      assert.equal(path, "MEMORY.md")
+      assert.equal(path, "/home/desktop/MEMORY.md")
       sandboxCalls.push("memory")
       if (sandboxFailure === "memory") throw new Error("Upload failed")
     },
   },
-  stop: async () => {
+  pause: async () => {
     sandboxCalls.push("stop")
     if (sandboxFailure === "stop") throw new Error("Stop failed")
   },
-  delete: async () => {
+  close: async () => {},
+  kill: async () => {
     sandboxCalls.push("delete")
     if (sandboxFailure === "delete") throw new Error("Delete failed")
   },
@@ -82,30 +83,19 @@ const updateDb = drizzle({
 })
 const telemetry = []
 const dependencies = {
-  "@/lib/sandbox": { STORAGE_TTL_MINUTES: 1440 },
-  "@/lib/daytona": {
-    getDaytona: () => new dependencies["@daytona/sdk"].Daytona(),
-  },
-  "@daytona/sdk": {
-    DaytonaNotFoundError,
-    Daytona: class {
-      async create(params) {
-        assert.deepEqual(params, {
-          ttlMinutes: 1440,
-          autoStopInterval: 1,
-          autoDeleteInterval: 1440,
-          public: false,
-        })
-        sandboxCalls.push("create")
-        if (sandboxFailure === "create") throw new Error("Create failed")
-        return sandbox
-      }
-      async get(id) {
-        assert.equal(id, "sandbox_1")
-        sandboxCalls.push("get")
-        if (sandboxFailure === "missing") throw new DaytonaNotFoundError()
-        return sandbox
-      }
+  "@/lib/opensandbox.mjs": {
+    MEMORY_PATH: "/home/desktop/MEMORY.md",
+    sandboxFiles: (sandbox) => sandbox.files,
+    createSandbox: async () => {
+      sandboxCalls.push("create")
+      if (sandboxFailure === "create") throw new Error("Create failed")
+      return sandbox
+    },
+    deleteSandbox: async (id) => {
+      assert.equal(id, "osb:sandbox_1")
+      sandboxCalls.push("delete")
+      if (sandboxFailure === "delete") throw new Error("Delete failed")
+      return sandboxFailure !== "missing"
     },
   },
   "drizzle-orm": orm,
@@ -198,7 +188,7 @@ assert.deepEqual(rows, [
       avatar: "seed",
       instructions: "",
       userId: "user_1",
-      sandboxId: "sandbox_1",
+      sandboxId: "osb:sandbox_1",
     },
   },
   { table: schema.chats, row: { userId: "user_1", kind: "direct" } },
@@ -309,7 +299,7 @@ for (const id of [null, "", {}, 123])
   assert.ok((await actions.deleteBot(id)).error)
 assert.equal(updates.length, beforeDelete)
 updateFailure = false
-updateRows = [["bot_1", "sandbox_1"]]
+updateRows = [["bot_1", "osb:sandbox_1"]]
 const sandboxBeforeDelete = sandboxCalls.length
 assert.deepEqual(await actions.deleteBot("bot_1"), { success: true })
 const botDeletion = updates.findLast((query) =>
@@ -320,7 +310,7 @@ assert.match(
   /delete from "bots" where \("bots"\."id" = \$1 and "bots"\."user_id" = \$2\)/
 )
 assert.deepEqual(botDeletion.values, ["bot_1", "user_1"])
-assert.deepEqual(sandboxCalls.slice(sandboxBeforeDelete), ["get", "delete"])
+assert.deepEqual(sandboxCalls.slice(sandboxBeforeDelete), ["delete"])
 const chatCleanup = updates.findLast((query) =>
   query.text.startsWith('delete from "chats"')
 )
@@ -344,7 +334,7 @@ assert.ok((await actions.deleteBot("bot_1")).error)
 assert.equal(paths.length, deletePathCount)
 assert.equal(sandboxCalls.length, beforeMissing)
 updateFailure = false
-updateRows = [["bot_1", "sandbox_1"]]
+updateRows = [["bot_1", "osb:sandbox_1"]]
 sandboxFailure = "delete"
 assert.ok((await actions.deleteBot("bot_1")).error)
 assert.equal(paths.length, deletePathCount)

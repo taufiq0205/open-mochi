@@ -8,6 +8,7 @@ import ts from "typescript"
 import { configure } from "@trigger.dev/sdk"
 import { apiClientManager } from "@trigger.dev/core/v3"
 import { z } from "zod"
+import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible"
 import * as React from "react"
 import * as jsxRuntime from "react/jsx-runtime"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -141,6 +142,7 @@ let rows = [
 let queryFailure = false
 const queries = []
 const sandboxIds = []
+const memoryContents = new Map()
 const responseParts = []
 let writeResponse = (part) => responseParts.push(part)
 let uiHistory = []
@@ -162,15 +164,19 @@ const { chatAgent } = load("../trigger/chat.ts", {
       assert.equal(userId, "user_1")
       sandboxIds.push(id)
       return {
-        state: "started",
-        fs: {
-          listFiles: async () => [],
-          getFileDetails: async () => ({ size: 12 }),
-          downloadFile: async (path) => {
-            assert.equal(path, "MEMORY.md")
-            return Buffer.from(`Memory of ${id}`)
+        close: async () => {},
+        files: {
+          withIdentity() {
+            return this
           },
-          uploadFile: async (_, path) => assert.equal(path, "MEMORY.md"),
+          listDirectory: async () => [],
+          getFileInfo: async ([path]) => ({ [path]: { size: 12 } }),
+          readFile: async (path) => {
+            assert.equal(path, "/home/desktop/MEMORY.md")
+            return memoryContents.get(id) ?? `Memory of ${id}`
+          },
+          uploadFile: async (_, path) =>
+            assert.equal(path, "/home/desktop/MEMORY.md"),
         },
       }
     },
@@ -413,7 +419,7 @@ try {
     assert.match(group.instructions, /Group members/)
     assert.match(group.instructions, /Teaching/)
     assert.match(group.instructions, /fresh user turn/)
-    assert.match(group.instructions, /0 of 1/)
+    assert.match(group.instructions, /prior context.*call handoff/)
     assert.match(group.instructions, /authoritative/)
     assert.equal(group.messages[0].role, "user")
     assert.match(group.messages[0].content, /"name":"Tutor"/)
@@ -436,6 +442,20 @@ try {
       { content: "Memory of ignored_sandbox" }
     )
     assert.equal(sandboxIds.pop(), "ignored_sandbox")
+    const openedAfterRead = sandboxIds.length
+    await group.tools.readMemory.execute(
+      {},
+      { toolCallId: "repeat", messages: [] }
+    )
+    assert.equal(
+      sandboxIds.length,
+      openedAfterRead,
+      "Repeated reads reuse this bot's turn memory"
+    )
+    assert.ok(
+      !group.prepareStep().activeTools.includes("readMemory"),
+      "Hide memory reads after the first call"
+    )
     const execute = group.tools.handoff.execute
     assert.match((await execute({ botId: "outsider" })).error, /not a member/)
     assert.match(
@@ -461,32 +481,99 @@ try {
     assert.match(next.instructions, /This turn was handed to you/)
     assert.match(next.instructions, /handoff to Tutor has already succeeded/)
     assert.match(next.instructions, /as fulfilled, not as a new request/)
-    assert.match(next.instructions, /acknowledge that you have taken over/)
+    assert.match(next.instructions, /do not repeat takeover introductions/)
     assert.doesNotMatch(
       next.instructions,
       /If the requested bot ID is your own ID, say you are already/
     )
-    assert.deepEqual(next.activeTools, ["readMemory", "writeMemory"])
+    assert.deepEqual(next.activeTools, ["writeMemory"])
     assert.deepEqual(next.messages, group.messages)
-    assert.equal(group.prepareStep().messages, undefined)
+    assert.deepEqual(group.prepareStep().messages, group.messages)
     assert.deepEqual(responseParts.at(-1), {
       type: "data-bot-avatar",
       id: "bot-avatar",
       data: "tutor-avatar",
     })
-    assert.match(
-      (await execute({ botId: id })).error,
-      /already been handed off/
-    )
+    assert.match((await execute({ botId: id })).error, /already consulted/)
   }
+
+  const savedRoster = roster
+  roster = [
+    rows[0],
+    ...["second", "third"].map((id) => ({
+      kind: "group",
+      id,
+      name: id,
+      avatar: id,
+      job: "Assistant",
+      sandboxId: id,
+    })),
+  ]
+  for (const member of roster) memoryContents.set(member.sandboxId, "")
+  const chain = await run()
+  const initialBotId = rows[0].id
+  for (const member of roster) {
+    const readCount = sandboxIds.length
+    await Promise.all([
+      chain.tools.readMemory.execute({}, { toolCallId: "once", messages: [] }),
+      chain.tools.readMemory.execute(
+        {},
+        { toolCallId: "duplicate", messages: [] }
+      ),
+    ])
+    assert.equal(
+      sandboxIds.length,
+      readCount + 1,
+      "Only one provider read per member, even concurrently"
+    )
+    sandboxIds.pop()
+    assert.ok(!chain.prepareStep().activeTools.includes("readMemory"))
+    const target = roster[roster.indexOf(member) + 1]
+    if (target) {
+      assert.equal(
+        (await chain.tools.handoff.execute({ botId: target.id })).botId,
+        target.id
+      )
+      const next = chain.prepareStep()
+      assert.ok(
+        next.activeTools.includes("readMemory"),
+        "A new member gets its own memory read"
+      )
+    }
+  }
+  assert.ok(
+    !chain.prepareStep().activeTools.includes("handoff"),
+    "Stop when all group members were consulted"
+  )
+  assert.match(
+    (await chain.tools.handoff.execute({ botId: initialBotId })).error,
+    /already consulted/
+  )
+  memoryContents.clear()
+  roster = savedRoster
 
   uiHistory = messages
   const usage = {
     inputTokens: { total: 1, noCache: 1 },
     outputTokens: { total: 1, text: 1 },
   }
+  memoryContents.set("ignored_sandbox", "")
   const mockModel = new MockLanguageModelV4({
     doStream: [
+      {
+        stream: simulateReadableStream({
+          chunks: [
+            {
+              type: "tool-call",
+              toolCallId: "sender_memory",
+              toolName: "readMemory",
+              input: "{}",
+            },
+            { type: "finish", finishReason: { unified: "tool-calls" }, usage },
+          ],
+        }),
+        warnings: [],
+      },
       {
         stream: simulateReadableStream({
           chunks: [
@@ -495,6 +582,20 @@ try {
               toolCallId: "handoff_real",
               toolName: "handoff",
               input: JSON.stringify({ botId: "target" }),
+            },
+            { type: "finish", finishReason: { unified: "tool-calls" }, usage },
+          ],
+        }),
+        warnings: [],
+      },
+      {
+        stream: simulateReadableStream({
+          chunks: [
+            {
+              type: "tool-call",
+              toolCallId: "memory_real",
+              toolName: "readMemory",
+              input: "{}",
             },
             { type: "finish", finishReason: { unified: "tool-calls" }, usage },
           ],
@@ -524,50 +625,86 @@ try {
   })
   await realLoop.consumeStream()
   assert.equal(await realLoop.text, "Tutor response")
-  assert.equal(mockModel.doStreamCalls.length, 2)
+  assert.equal(mockModel.doStreamCalls.length, 4)
   assert.match(JSON.stringify(mockModel.doStreamCalls[0].prompt), /Grace/)
   assert.match(
-    JSON.stringify(mockModel.doStreamCalls[1].prompt),
+    JSON.stringify(mockModel.doStreamCalls[2].prompt),
     /Teach with examples/
   )
   assert.doesNotMatch(
-    JSON.stringify(mockModel.doStreamCalls[1].prompt),
+    JSON.stringify(mockModel.doStreamCalls[2].prompt),
     /handoff_real/
   )
-  assert.equal(mockModel.doStreamCalls[1].tools?.length ?? 0, 2)
+  assert.equal(mockModel.doStreamCalls[2].tools?.length ?? 0, 2)
+  assert.match(
+    JSON.stringify(mockModel.doStreamCalls[3].prompt),
+    /Memory of tutor_sandbox/
+  )
+  assert.doesNotMatch(
+    JSON.stringify(mockModel.doStreamCalls[3].prompt),
+    /handoff_real|sender_memory/
+  )
+  assert.deepEqual(
+    mockModel.doStreamCalls[3].tools.map((t) => t.name),
+    ["writeMemory"]
+  )
+  sandboxIds.pop()
+  sandboxIds.pop()
+  memoryContents.clear()
   console.log(
     "Real AI SDK stream loop switches to the receiver instructions, original request, and memory tools only."
   )
 
+  memoryContents.set("ignored_sandbox", "")
+  const managedReadsStart = sandboxIds.length
   const managedModel = new MockLanguageModelV4({
     doStream: async () => {
-      const targetTurn = managedModel.doStreamCalls.length % 2 === 0
+      const phase = (managedModel.doStreamCalls.length - 1) % 4
       return {
         stream: simulateReadableStream({
-          chunks: targetTurn
-            ? [
-                { type: "text-start", id: "receiver" },
-                {
-                  type: "text-delta",
-                  id: "receiver",
-                  delta: "Managed Tutor response",
-                },
-                { type: "text-end", id: "receiver" },
-                { type: "finish", finishReason: { unified: "stop" }, usage },
-              ]
-            : [
-                {
-                  type: "tool-call",
-                  toolCallId: `managed_handoff_${managedModel.doStreamCalls.length}`,
-                  toolName: "handoff",
-                  input: JSON.stringify({ botId: "target" }),
-                },
-                {
-                  type: "finish",
-                  finishReason: { unified: "tool-calls" },
-                  usage,
-                },
-              ],
+          chunks:
+            phase === 0 || phase === 2
+              ? [
+                  {
+                    type: "tool-call",
+                    toolCallId: `managed_memory_${managedModel.doStreamCalls.length}`,
+                    toolName: "readMemory",
+                    input: "{}",
+                  },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "tool-calls" },
+                    usage,
+                  },
+                ]
+              : phase === 3
+                ? [
+                    { type: "text-start", id: "receiver" },
+                    {
+                      type: "text-delta",
+                      id: "receiver",
+                      delta: "Managed Tutor response",
+                    },
+                    { type: "text-end", id: "receiver" },
+                    {
+                      type: "finish",
+                      finishReason: { unified: "stop" },
+                      usage,
+                    },
+                  ]
+                : [
+                    {
+                      type: "tool-call",
+                      toolCallId: `managed_handoff_${managedModel.doStreamCalls.length}`,
+                      toolName: "handoff",
+                      input: JSON.stringify({ botId: "target" }),
+                    },
+                    {
+                      type: "finish",
+                      finishReason: { unified: "tool-calls" },
+                      usage,
+                    },
+                  ],
         }),
         warnings: [],
       }
@@ -613,7 +750,26 @@ try {
       )
       assert.ok(turn.chunks.some((chunk) => chunk.type === "finish"))
     }
-    assert.equal(managedModel.doStreamCalls.length, 4)
+    assert.equal(managedModel.doStreamCalls.length, 8)
+    for (const index of [3, 7]) {
+      assert.match(
+        JSON.stringify(managedModel.doStreamCalls[index].prompt),
+        /Memory of tutor_sandbox/,
+        "Managed SDK must retain the receiver's memory tool result"
+      )
+      assert.doesNotMatch(
+        JSON.stringify(managedModel.doStreamCalls[index].prompt),
+        /managed_handoff_|managed_memory_(1|5)"/
+      )
+    }
+    assert.deepEqual(sandboxIds.slice(managedReadsStart), [
+      "ignored_sandbox",
+      "tutor_sandbox",
+      "ignored_sandbox",
+      "tutor_sandbox",
+    ])
+    sandboxIds.splice(managedReadsStart)
+    memoryContents.clear()
     console.log(
       "Full managed Trigger handoff reaches receiver text and turn completion on two consecutive turns."
     )
@@ -623,7 +779,7 @@ try {
     readHistory = () => uiHistory
   }
   console.log(
-    "Handoff checks passed: owned roster, target instructions/avatar, self/non-member rejection, one handoff per turn, and no direct-chat handoff (stubbed)."
+    "Handoff checks passed: owned roster, target instructions/avatar, self/non-member rejection, one visit and memory read per member per turn, and no direct-chat handoff (stubbed)."
   )
   rows = [{ kind: "group", name: null }]
   await assert.rejects(run(), /Select a bot/)
@@ -726,7 +882,17 @@ const toolUI = {
   ToolOutput: ({ output, errorText }) =>
     React.createElement("pre", null, JSON.stringify(output), errorText),
 }
-const { ChatTool } = load("../components/chat-tool.tsx", {
+const collapsibleUI = load("../components/ui/collapsible.tsx", {
+  "react/jsx-runtime": jsxRuntime,
+  "@base-ui/react/collapsible": { Collapsible: CollapsiblePrimitive },
+})
+const taskUI = load("../components/ai-elements/task.tsx", {
+  "react/jsx-runtime": jsxRuntime,
+  "@/components/ui/collapsible": collapsibleUI,
+  "@/lib/utils": { cn: (...classes) => classes.filter(Boolean).join(" ") },
+  "lucide-react": primitives(["ChevronDownIcon", "SearchIcon"]),
+})
+const { ChatTool, ChatToolActivity } = load("../components/chat-tool.tsx", {
   "react/jsx-runtime": jsxRuntime,
   ai: { getToolName },
   "lucide-react": primitives([
@@ -738,6 +904,7 @@ const { ChatTool } = load("../components/chat-tool.tsx", {
   ]),
   "@/components/ui/collapsible": primitives(["CollapsibleTrigger"]),
   "@/components/ai-elements/tool": toolUI,
+  "@/components/ai-elements/task": taskUI,
 })
 for (const [state, label] of Object.entries({
   "input-streaming": "Preparing",
@@ -768,6 +935,41 @@ for (const [state, label] of Object.entries({
 console.log(
   "Compact tool rows render all SDK states and escape untrusted content."
 )
+const twentyTools = Array.from({ length: 20 }, (_, i) => ({
+  type: "dynamic-tool",
+  toolName: "bash",
+  toolCallId: `bulk-${i}`,
+  state: "output-available",
+  input: { command: "pwd" },
+  output: { output: "/private-test-path" },
+}))
+const activityMarkup = renderToStaticMarkup(
+  React.createElement(ChatToolActivity, { parts: twentyTools })
+)
+assert.match(activityMarkup, /20 actions completed/)
+assert.match(activityMarkup, /aria-expanded="false"/)
+assert.doesNotMatch(activityMarkup, /private-test-path|chat-tool group/)
+const activityTree = ChatToolActivity({ parts: twentyTools })
+assert.equal(activityTree.props.defaultOpen, false)
+assert.equal(
+  activityTree.props.children[1].props.children.length,
+  20,
+  "All tool details remain available on expansion"
+)
+const runningActivity = renderToStaticMarkup(
+  React.createElement(ChatToolActivity, {
+    parts: [
+      ...twentyTools,
+      { ...twentyTools[0], toolCallId: "live", state: "input-available" },
+    ],
+  })
+)
+assert.match(runningActivity, /Working · 21 actions/)
+assert.match(runningActivity, /bash/)
+console.log(
+  "Real collapsed activity renders one summary for 20 calls, keeps details for expansion, and reports live SDK state."
+)
+
 const { Chat } = load("../components/chat.tsx", {
   "react/jsx-runtime": jsxRuntime,
   "next/image": {
@@ -777,7 +979,7 @@ const { Chat } = load("../components/chat.tsx", {
     },
   },
   react: { ...React, useEffect: (effect) => connectionEffects.push(effect) },
-  "@/components/chat-tool": { ChatTool },
+  "@/components/chat-tool": { ChatTool, ChatToolActivity },
   "@/components/ai-elements/reasoning": primitives([
     "Reasoning",
     "ReasoningTrigger",
@@ -852,6 +1054,29 @@ const { Chat } = load("../components/chat.tsx", {
   "@/components/ui/button": primitives(["Button"]),
   "@/components/ui/badge": primitives(["Badge"]),
 })
+renderedMessages[0].parts.push(
+  {
+    type: "tool-bash",
+    toolCallId: "approval",
+    state: "approval-requested",
+    input: { command: "pwd" },
+    approval: { id: "approval-1" },
+  },
+  {
+    type: "tool-bash",
+    toolCallId: "denied",
+    state: "output-denied",
+    input: { command: "pwd" },
+    approval: { id: "approval-2", approved: false },
+  },
+  {
+    type: "tool-bash",
+    toolCallId: "reported-error",
+    state: "output-available",
+    input: { command: "pwd" },
+    output: { error: "Reported tool failure" },
+  }
+)
 const markup = renderToStaticMarkup(
   React.createElement(Chat, { chatId: "chat_1" })
 )
@@ -874,12 +1099,27 @@ finishStart()
 await new Promise(setImmediate)
 assert.equal(resumeCalls, 1, "Navigating away must cancel deferred resume")
 assert.doesNotMatch(markup, /reply-bot-avatar/)
-assert.match(markup, /Completed/)
-assert.match(markup, /Preparing/)
+assert.match(markup, /Working · [0-9]+ actions/)
+assert.match(markup, /mouse Click/)
 assert.match(markup, /Failed/)
-assert.match(markup, /home\/test/)
-assert.match(markup, /Screen inspected/)
+assert.doesNotMatch(
+  markup,
+  /home\/test/,
+  "Collapsed activity hides routine tool details"
+)
+assert.doesNotMatch(
+  markup,
+  /Screen inspected/,
+  "Private screenshots stay in collapsed activity"
+)
 assert.match(markup, /Sandbox operation failed/)
+assert.match(markup, /Needs approval/)
+assert.match(markup, /Denied/)
+assert.match(
+  markup,
+  /Reported tool failure/,
+  "Failures returned as tool output must stay visible"
+)
 assert.doesNotMatch(
   markup,
   /SECRET_SCREENSHOT_BYTES|SECRET_ERROR_SCREENSHOT_BYTES/
@@ -939,6 +1179,33 @@ assert.ok(
 console.log(
   "Handoff renders the source indicator before the receiver reply and omits sender preamble."
 )
+
+renderedMessages[0].parts.splice(
+  4,
+  0,
+  {
+    type: "tool-handoff",
+    toolCallId: "handoff_2",
+    state: "output-available",
+    input: { botId: "bot_3" },
+    output: {
+      botId: "bot_3",
+      name: "Final respondent",
+      fromAvatar: "receiver-avatar",
+    },
+  },
+  { type: "data-bot-avatar", data: "final-avatar" }
+)
+const chainedMarkup = renderToStaticMarkup(
+  React.createElement(Chat, {
+    chatId: "group_1",
+    members: [{ id: "bot_1", name: "Ada", avatar: "ada" }],
+  })
+)
+assert.match(chainedMarkup, /Handed off to Final respondent/)
+assert.doesNotMatch(chainedMarkup, /Handed off to Code reviewer/)
+assert.match(chainedMarkup, /data-avatar="final-avatar"/)
+renderedMessages[0].parts.splice(4, 2)
 
 renderedMessages.push({
   id: "empty-sender",

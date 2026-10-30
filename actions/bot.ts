@@ -4,11 +4,15 @@ import { logger } from "@sentry/core"
 import { and, eq, notExists } from "drizzle-orm"
 import { requireSession } from "@/lib/session"
 import { revalidatePath } from "next/cache"
-import { DaytonaNotFoundError, type Sandbox } from "@daytona/sdk"
+import type { Sandbox } from "@alibaba-group/opensandbox"
 
 import { db } from "@/lib/db"
-import { STORAGE_TTL_MINUTES } from "@/lib/sandbox"
-import { getDaytona } from "@/lib/daytona"
+import {
+  createSandbox,
+  deleteSandbox,
+  MEMORY_PATH,
+  sandboxFiles,
+} from "@/lib/opensandbox.mjs"
 import {
   bots,
   chatMembers,
@@ -27,21 +31,14 @@ export async function createBot(input: unknown) {
   let stage = "create sandbox"
   let sandbox: Sandbox | undefined
   try {
-    sandbox = await getDaytona().create(
-      {
-        ttlMinutes: STORAGE_TTL_MINUTES,
-        autoStopInterval: 1,
-        autoDeleteInterval: STORAGE_TTL_MINUTES,
-        public: false,
-      },
-      { timeout: 60 }
-    )
+    sandbox = await createSandbox()
     stage = "create MEMORY.md"
-    await sandbox.fs.uploadFile(Buffer.alloc(0), "MEMORY.md", 60)
-    stage = "stop sandbox"
-    await sandbox.stop()
-    await sandbox.setTtl(STORAGE_TTL_MINUTES)
-    const sandboxId = sandbox.id
+    await sandboxFiles(sandbox).writeFiles([
+      { path: MEMORY_PATH, data: "", mode: 600 },
+    ])
+    stage = "pause sandbox"
+    await sandbox.pause()
+    const sandboxId = `osb:${sandbox.id}`
     stage = "save bot and chat"
     await db.transaction(async (tx) => {
       const [bot] = await tx
@@ -61,7 +58,7 @@ export async function createBot(input: unknown) {
     })
     if (sandbox) {
       try {
-        await sandbox.delete()
+        await sandbox.kill()
       } catch {
         logger.error("Bot sandbox cleanup failed")
       }
@@ -69,6 +66,8 @@ export async function createBot(input: unknown) {
     return {
       error: "Could not create your bot. Please try again.",
     }
+  } finally {
+    await sandbox?.close()
   }
 
   revalidatePath("/(dashboard)", "layout")
@@ -114,13 +113,8 @@ export async function deleteBot(botId: unknown) {
         .where(and(eq(bots.id, id.data), eq(bots.userId, userId)))
         .returning({ id: bots.id, sandboxId: bots.sandboxId })
       if (deleted?.sandboxId) {
-        try {
-          const sandbox = await getDaytona().get(deleted.sandboxId)
-          await sandbox.delete()
-        } catch (error) {
-          // A previous deletion may have succeeded before the DB commit failed.
-          if (!(error instanceof DaytonaNotFoundError)) throw error
-        }
+        // Missing resources are safe to ignore after a previous deletion attempt.
+        await deleteSandbox(deleted.sandboxId)
       }
       if (deleted) {
         await tx

@@ -32,12 +32,51 @@ services:
       postgres:
         condition: service_healthy
     command: ["npm", "run", "db:push"]
+  opensandbox:
+    image: opensandbox/server:release-1.2.0
+    network_mode: bridge
+    environment:
+      OPENSANDBOX_SERVER_API_KEY: ${OPEN_SANDBOX_API_KEY:?Set OPEN_SANDBOX_API_KEY in .env}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infra/opensandbox/config.toml:/etc/opensandbox/config.toml:ro
+      - opensandbox-state:/root/.opensandbox
+    ports:
+      - "127.0.0.1:8085:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  sandbox-image:
+    entrypoint: ["/bin/true"]
+    network_mode: none
+    image: open-mochi-sandbox:local
+    build: ./infra/opensandbox
+  desktop-proxy:
+    build:
+      context: .
+      target: desktop-proxy
+    environment:
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+    ports:
+      - "127.0.0.1:${DESKTOP_PROXY_PORT:-3001}:3001"
+    restart: unless-stopped
+    init: true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
   web:
     networks:
       - default
       - trigger-webapp
     build:
       context: .
+      target: runner
       args:
         NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
         NEXT_PUBLIC_TRIGGER_API_URL: ${NEXT_PUBLIC_TRIGGER_API_URL:-http://localhost:8030}
@@ -45,7 +84,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      opensandbox:
+        condition: service_healthy
+      sandbox-image:
+        condition: service_completed_successfully
     environment:
+      OPEN_SANDBOX_DOMAIN: ${OPEN_SANDBOX_DOMAIN:-http://host.docker.internal:8085}
+      OPEN_SANDBOX_API_KEY: ${OPEN_SANDBOX_API_KEY:?Set OPEN_SANDBOX_API_KEY in .env}
       TRIGGER_API_URL: http://trigger-webapp:3000
       DATABASE_URL: postgresql://mochi:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/mochi
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
@@ -63,6 +108,7 @@ services:
       start_period: 30s
       retries: 3
 volumes:
+  opensandbox-state:
   postgres-data:
   next-cache:
 networks:

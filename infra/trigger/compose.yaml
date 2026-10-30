@@ -44,7 +44,10 @@ services:
     environment:
       APP_ORIGIN: ${TRIGGER_PLATFORM_APP_ORIGIN:-http://localhost:8030}
       LOGIN_ORIGIN: ${TRIGGER_PLATFORM_LOGIN_ORIGIN:-http://localhost:8030}
-      API_ORIGIN: http://trigger-webapp:3000
+      API_ORIGIN: ${TRIGGER_PLATFORM_APP_ORIGIN:-http://localhost:8030}
+      INTERNAL_API_ORIGIN: http://trigger-webapp:3000
+      INTERNAL_API_ORIGIN_ENABLED: "1"
+      STREAM_ORIGIN: http://trigger-webapp:3000
       ELECTRIC_ORIGIN: http://trigger-electric:3000
       REALTIME_STREAMS_DEFAULT_VERSION: ${TRIGGER_PLATFORM_REALTIME_STREAMS_DEFAULT_VERSION:-v2}
       REALTIME_STREAMS_S2_BASIN: ${TRIGGER_PLATFORM_REALTIME_STREAMS_S2_BASIN:-trigger-realtime}

@@ -26,7 +26,7 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message"
-import { ChatTool } from "@/components/chat-tool"
+import { ChatTool, ChatToolActivity } from "@/components/chat-tool"
 import {
   Reasoning,
   ReasoningTrigger,
@@ -182,7 +182,7 @@ function ChatView({
                 : undefined
             const handoff =
               members && message.role === "assistant"
-                ? message.parts.find(
+                ? message.parts.findLast(
                     (part) =>
                       isToolUIPart(part) &&
                       getToolName(part) === "handoff" &&
@@ -216,6 +216,29 @@ function ChatView({
                 return Boolean(part.text.trim())
               return isToolUIPart(part) && !(handoffName && part === handoff)
             })
+            const routineTools = visibleParts
+              .filter(isToolUIPart)
+              .filter((part) => {
+                if (
+                  ![
+                    "input-streaming",
+                    "input-available",
+                    "output-available",
+                  ].includes(part.state)
+                )
+                  return false
+                const output = part.output
+                if (output && typeof output === "object") {
+                  if ("error" in output) return false
+                  if (
+                    getToolName(part) === "viewScreen" &&
+                    "showInChat" in output &&
+                    output.showInChat === true
+                  )
+                    return false
+                }
+                return true
+              })
             return (
               <Fragment key={message.id}>
                 {handoffName && (
@@ -296,6 +319,13 @@ function ChatView({
                             </MessageResponse>
                           )
                         if (!isToolUIPart(part)) return null
+                        if (routineTools.includes(part))
+                          return part === routineTools[0] ? (
+                            <ChatToolActivity
+                              key="tool-activity"
+                              parts={routineTools}
+                            />
+                          ) : null
                         const screenshot = getToolName(part) === "viewScreen"
                         const output =
                           screenshot && part.state === "output-available"

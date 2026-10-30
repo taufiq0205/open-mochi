@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs"
 import ts from "typescript"
 import { z } from "zod"
 import * as jsx from "react/jsx-runtime"
+import { sealDesktopTicket, openDesktopTicket } from "../lib/desktop-ticket.mjs"
+process.env.BETTER_AUTH_SECRET = "desktop-test-secret-".repeat(3)
 
 function load(path, dependencies) {
   const exports = {}
@@ -31,6 +33,12 @@ let fail = false
 const calls = []
 const { connectDesktop } = load("../actions/desktop.ts", {
   zod: { z },
+  "@/lib/desktop-ticket.mjs": { sealDesktopTicket },
+  "@/lib/opensandbox.mjs": {
+    sandboxConfig: () => ({ apiKey: "private-token" }),
+    DESKTOP_PASSWORD_PATH: "/home/desktop/.vnc-password",
+    sandboxFiles: (sandbox) => sandbox.files,
+  },
 
   "@/lib/session": {
     requireSession: async () => {
@@ -51,13 +59,16 @@ const { connectDesktop } = load("../actions/desktop.ts", {
       calls.push(["get", id])
       if (fail) throw new Error("secret provider detail")
       return {
-        state: "stopped",
-        start: async () => calls.push(["start"]),
-        computerUse: { start: async () => calls.push(["desktop"]) },
-        getSignedPreviewUrl: async (...args) => {
-          calls.push(["signed", ...args])
-          return { url: "https://6080-signed.example.test" }
+        getEndpointUrl: async () =>
+          "http://opensandbox.test/v1/sandboxes/owned_sandbox/proxy/6080",
+        files: {
+          readFile: async (path) => {
+            assert.equal(path, "/home/desktop/.vnc-password")
+            calls.push(["password"])
+            return "vnc-password"
+          },
         },
+        close: async () => calls.push(["close"]),
       }
     },
   },
@@ -77,21 +88,32 @@ assert.ok((await connectDesktop("group_1")).error)
 assert.deepEqual(calls, [["authorize", "group_1"]])
 calls.length = 0
 chat = { botSandboxId: "owned_sandbox" }
-assert.deepEqual(await connectDesktop("chat_1"), {
-  url: "wss://6080-signed.example.test/websockify",
-})
+const result = await connectDesktop("chat_1")
+assert.equal(result.password, "vnc-password")
+const url = new URL(result.url)
+assert.equal(url.origin, "ws://localhost:3001")
+assert.ok(!result.url.includes("private-token"))
+const ticket = openDesktopTicket(url.searchParams.get("ticket"))
+assert.equal(
+  ticket.target,
+  "ws://opensandbox.test/v1/sandboxes/owned_sandbox/proxy/6080/websockify"
+)
+assert.deepEqual(ticket.headers, { "OPEN-SANDBOX-API-KEY": "private-token" })
 assert.deepEqual(calls, [
   ["authorize", "chat_1"],
   ["get", "owned_sandbox"],
-  ["desktop"],
-  ["signed", 6080, 300],
+  ["password"],
+  ["close"],
 ])
 fail = true
 assert.deepEqual(await connectDesktop("chat_1"), {
   error: "Could not connect to the desktop. Please retry.",
 })
 
-let desktopResult = { url: "wss://signed.test/websockify" }
+let desktopResult = {
+  url: "wss://signed.test/websockify",
+  password: "vnc-password",
+}
 const refs = []
 const effects = []
 const setters = []
@@ -131,7 +153,8 @@ const { SandboxDesktop } = load("../components/sandbox-desktop.tsx", {
   },
   "@novnc/novnc": {
     default: class {
-      constructor(target, url) {
+      constructor(target, url, options) {
+        this.credentials = options.credentials
         this.target = target
         this.url = url
         this.disconnected = false
@@ -164,6 +187,7 @@ try {
   await new Promise(setImmediate)
   assert.equal(connections.length, 1)
   const connection = connections[0]
+  assert.equal(connection.credentials.password, "vnc-password")
   assert.equal(connection.viewOnly, true)
   assert.equal(preview.child, host)
   const dialog = tree.props.children.find(

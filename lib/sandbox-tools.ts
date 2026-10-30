@@ -1,6 +1,8 @@
 import { tool } from "ai"
 import { logger } from "@sentry/core"
-import type { Sandbox } from "@daytona/sdk"
+import type { Sandbox } from "@alibaba-group/opensandbox"
+import { randomUUID } from "node:crypto"
+import { MEMORY_PATH, sandboxFiles } from "./opensandbox.mjs"
 import { z } from "zod"
 
 const path = z.string().min(1).max(4096)
@@ -9,8 +11,19 @@ const position = {
   y: z.number().int().nonnegative(),
 }
 
+async function desktopCommand(sandbox: Sandbox, command: string[]) {
+  const result = await sandbox.commands.run(command, {
+    timeoutSeconds: 60,
+    uid: 1000,
+    gid: 1000,
+    envs: { DISPLAY: ":0" },
+  })
+  if (result.error || result.exitCode !== 0)
+    throw new Error("Desktop command failed")
+  return { success: true }
+}
+
 export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
-  let desktop: Promise<unknown> | undefined
   let queue: Promise<unknown> = Promise.resolve()
 
   // Serialize actions so parallel model calls cannot race startup or desktop input.
@@ -22,27 +35,13 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
     const result = queue
       .then(async () => {
         options.abortSignal?.throwIfAborted()
-        const ready = resolveSandbox().then(async (sandbox) => {
-          if (["stopped", "archived", "paused"].includes(sandbox.state ?? ""))
-            await sandbox.start()
-          else if (
-            sandbox.state === "starting" ||
-            sandbox.state === "restoring"
-          )
-            await sandbox.waitUntilStarted()
-          else if (sandbox.state !== "started")
-            throw new Error("Sandbox is unavailable")
-          return sandbox
-        })
-        const sandbox = await ready
-        options.abortSignal?.throwIfAborted()
-        if (gui) {
-          desktop ??= sandbox.computerUse.start()
-          await desktop
+        const sandbox = await resolveSandbox()
+        try {
+          options.abortSignal?.throwIfAborted()
+          return await operation(sandbox)
+        } finally {
+          await sandbox.close()
         }
-        options.abortSignal?.throwIfAborted()
-        // shortcut: in-flight SDK calls cannot be aborted; add cancellable sessions when hard cancellation is needed.
-        return operation(sandbox)
       })
       .catch(() => {
         logger.warn("Sandbox tool operation failed", { desktop: gui })
@@ -61,15 +60,17 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       inputSchema: z.object({}),
       execute: (_, options) =>
         run(async (sandbox) => {
-          const info = await sandbox.fs.getFileDetails("MEMORY.md")
-          if (info.size > 20000)
+          const info = (await sandboxFiles(sandbox).getFileInfo([MEMORY_PATH]))[
+            MEMORY_PATH
+          ]
+          if (typeof info?.size !== "number" || info.size > 20000)
             throw new Error(
               "Memory exceeds 20000 bytes; use private chat to condense it."
             )
           return {
-            content: (await sandbox.fs.downloadFile("MEMORY.md", 60)).toString(
-              "utf8"
-            ),
+            content: await sandboxFiles(sandbox).readFile(MEMORY_PATH, {
+              limit: 20000,
+            }),
           }
         }, options),
     }),
@@ -79,7 +80,9 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       inputSchema: z.object({ content: z.string().max(5000) }),
       execute: ({ content }, options) =>
         run(async (sandbox) => {
-          await sandbox.fs.uploadFile(Buffer.from(content), "MEMORY.md", 60)
+          await sandboxFiles(sandbox).writeFiles([
+            { path: MEMORY_PATH, data: content, mode: 600 },
+          ])
           return { written: true }
         }, options),
     }),
@@ -92,16 +95,26 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       }),
       execute: ({ command, cwd }, options) =>
         run(async (sandbox) => {
-          const result = await sandbox.process.executeCommand(
+          const result = await sandbox.commands.run(
             command,
-            cwd,
+            {
+              workingDirectory: cwd,
+              timeoutSeconds: 60,
+              uid: 1000,
+              gid: 1000,
+            },
             undefined,
-            60
+            options.abortSignal
           )
+          const output = [...result.logs.stdout, ...result.logs.stderr]
+            .map((message) => message.text)
+            .join("")
+          const exitCode = result.exitCode ?? result.error?.exitCode
+          if (exitCode == null) throw new Error("Command did not finish")
           return {
-            exitCode: result.exitCode,
-            output: result.result.slice(0, 20000),
-            truncated: result.result.length > 20000,
+            exitCode,
+            output: output.slice(0, 20000),
+            truncated: output.length > 20000,
           }
         }, options),
     }),
@@ -111,11 +124,12 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       inputSchema: z.object({ path }),
       execute: ({ path }, options) =>
         run(async (sandbox) => {
-          const info = await sandbox.fs.getFileDetails(path)
-          if (info.size > 1000000) throw new Error("File too large")
-          const content = (await sandbox.fs.downloadFile(path, 60)).toString(
-            "utf8"
-          )
+          const info = (await sandboxFiles(sandbox).getFileInfo([path]))[path]
+          if (typeof info?.size !== "number" || info.size > 1000000)
+            throw new Error("File too large")
+          const content = await sandboxFiles(sandbox).readFile(path, {
+            limit: 1000000,
+          })
           return {
             content: content.slice(0, 20000),
             truncated: content.length > 20000,
@@ -124,11 +138,11 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
     }),
     writeFile: tool({
       description:
-        "Write UTF-8 text to a sandbox file, replacing its contents. Parent directory must exist.",
+        "Write UTF-8 text to a sandbox file, replacing its contents and creating parent directories.",
       inputSchema: z.object({ path, content: z.string().max(1000000) }),
       execute: ({ path, content }, options) =>
         run(async (sandbox) => {
-          await sandbox.fs.uploadFile(Buffer.from(content), path, 60)
+          await sandboxFiles(sandbox).writeFiles([{ path, data: content }])
           return { written: true }
         }, options),
     }),
@@ -137,7 +151,10 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       inputSchema: z.object({ path }),
       execute: ({ path }, options) =>
         run(async (sandbox) => {
-          const files = await sandbox.fs.listFiles(path)
+          const files = await sandboxFiles(sandbox).listDirectory({
+            path,
+            depth: 1,
+          })
           return { files: files.slice(0, 200), truncated: files.length > 200 }
         }, options),
     }),
@@ -151,7 +168,20 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       }),
       execute: ({ x, y, button, double }, options) =>
         run(
-          (sandbox) => sandbox.computerUse.mouse.click(x, y, button, double),
+          async (sandbox) => {
+            await desktopCommand(sandbox, [
+              "xdotool",
+              "mousemove",
+              "--sync",
+              String(x),
+              String(y),
+              "click",
+              "--repeat",
+              double ? "2" : "1",
+              String({ left: 1, right: 3, middle: 2 }[button]),
+            ])
+            return { clicked: true }
+          },
           options,
           true
         ),
@@ -160,7 +190,18 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       description: "Move the mouse to a screen coordinate.",
       inputSchema: z.object(position),
       execute: ({ x, y }, options) =>
-        run((sandbox) => sandbox.computerUse.mouse.move(x, y), options, true),
+        run(
+          (sandbox) =>
+            desktopCommand(sandbox, [
+              "xdotool",
+              "mousemove",
+              "--sync",
+              String(x),
+              String(y),
+            ]),
+          options,
+          true
+        ),
     }),
     mouseScroll: tool({
       description:
@@ -172,14 +213,21 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       }),
       execute: ({ x, y, direction, amount }, options) =>
         run(
-          async (sandbox) => ({
-            scrolled: await sandbox.computerUse.mouse.scroll(
-              x,
-              y,
-              direction,
-              amount
-            ),
-          }),
+          async (sandbox) => {
+            const button = { up: 4, down: 5, left: 6, right: 7 }[direction]
+            await desktopCommand(sandbox, [
+              "xdotool",
+              "mousemove",
+              "--sync",
+              String(x),
+              String(y),
+              "click",
+              "--repeat",
+              String(amount),
+              String(button),
+            ])
+            return { scrolled: true }
+          },
           options,
           true
         ),
@@ -191,7 +239,13 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       execute: ({ text }, options) =>
         run(
           async (sandbox) => {
-            await sandbox.computerUse.keyboard.type(text)
+            await desktopCommand(sandbox, [
+              "xdotool",
+              "type",
+              "--clearmodifiers",
+              "--",
+              text,
+            ])
             return { typed: true }
           },
           options,
@@ -211,7 +265,32 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       execute: ({ key, modifiers }, options) =>
         run(
           async (sandbox) => {
-            await sandbox.computerUse.keyboard.press(key, modifiers)
+            const keys: Record<string, string> = {
+              enter: "Return",
+              escape: "Escape",
+              esc: "Escape",
+              tab: "Tab",
+              backspace: "BackSpace",
+              space: "space",
+              delete: "Delete",
+              up: "Up",
+              down: "Down",
+              left: "Left",
+              right: "Right",
+            }
+            const chord = [
+              ...(modifiers ?? []).map((key) =>
+                key === "cmd" ? "super" : key
+              ),
+              keys[key.toLowerCase()] ?? key,
+            ].join("+")
+            await desktopCommand(sandbox, [
+              "xdotool",
+              "key",
+              "--clearmodifiers",
+              "--",
+              chord,
+            ])
             return { pressed: true }
           },
           options,
@@ -225,10 +304,18 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
       execute: ({ showInChat = false }, options) =>
         run(
           async (sandbox) => {
-            const result = await sandbox.computerUse.screenshot.takeFullScreen()
-            return {
-              screenshot: z.string().min(1).parse(result.screenshot),
-              showInChat,
+            const path = `/tmp/screenshot-${randomUUID()}.png`
+            try {
+              await desktopCommand(sandbox, ["scrot", "-p", path])
+              const screenshot = Buffer.from(
+                await sandboxFiles(sandbox).readBytes(path)
+              ).toString("base64")
+              return {
+                screenshot: z.string().min(1).parse(screenshot),
+                showInChat,
+              }
+            } finally {
+              await sandboxFiles(sandbox).deleteFiles([path])
             }
           },
           options,
