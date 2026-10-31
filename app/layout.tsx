@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono } from "next/font/google"
+import { Geist_Mono, Inter, Instrument_Sans } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -6,7 +6,11 @@ import { Toaster } from "@/components/ui/toast"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" })
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
+const instrumentSans = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--font-heading",
+})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -26,7 +30,8 @@ export default function RootLayout({
         "antialiased",
         fontMono.variable,
         "font-sans",
-        geist.variable
+        inter.variable,
+        instrumentSans.variable
       )}
     >
       <body>

@@ -32,7 +32,7 @@ export function CreateChatMenu({ bots }: { bots: ChatBot[] }) {
           >
             <PlusIcon aria-hidden="true" />
             <span className="group-data-[collapsible=icon]:hidden">
-              New conversation
+              New chat
             </span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

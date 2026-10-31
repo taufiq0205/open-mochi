@@ -402,7 +402,7 @@ try {
       false
     )
     assert.equal(
-      group.tools.handoff.inputSchema.safeParse({ botId: "target" }).success,
+      group.tools.handoff.inputSchema.safeParse({ botId: "target", reason: "checking notes" }).success,
       true
     )
     assert.deepEqual(responseParts.at(-1), {
@@ -462,11 +462,15 @@ try {
       (await execute({ botId: id })).error,
       new RegExp(`already ${name}`)
     )
-    assert.deepEqual(await execute({ botId: "target" }), {
-      botId: "target",
-      name: "Tutor",
-      fromAvatar: id,
-    })
+    assert.deepEqual(
+      await execute({ botId: "target", reason: "checking notes" }),
+      {
+        botId: "target",
+        name: "Tutor",
+        fromAvatar: id,
+        reason: "checking notes",
+      }
+    )
     assert.deepEqual(
       await group.tools.readMemory.execute(
         {},
@@ -581,7 +585,7 @@ try {
               type: "tool-call",
               toolCallId: "handoff_real",
               toolName: "handoff",
-              input: JSON.stringify({ botId: "target" }),
+              input: JSON.stringify({ botId: "target", reason: "checking notes" }),
             },
             { type: "finish", finishReason: { unified: "tool-calls" }, usage },
           ],
@@ -697,7 +701,7 @@ try {
                       type: "tool-call",
                       toolCallId: `managed_handoff_${managedModel.doStreamCalls.length}`,
                       toolName: "handoff",
-                      input: JSON.stringify({ botId: "target" }),
+                      input: JSON.stringify({ botId: "target", reason: "checking notes" }),
                     },
                     {
                       type: "finish",
@@ -875,36 +879,23 @@ const connectionEffects = []
 let finishStart
 let resumeCalls = 0
 const loadTranscript = async () => ({ messages: renderedMessages })
-const toolUI = {
-  ...primitives(["Tool", "ToolContent"]),
-  ToolInput: ({ input }) =>
-    React.createElement("pre", null, JSON.stringify(input)),
-  ToolOutput: ({ output, errorText }) =>
-    React.createElement("pre", null, JSON.stringify(output), errorText),
-}
 const collapsibleUI = load("../components/ui/collapsible.tsx", {
   "react/jsx-runtime": jsxRuntime,
   "@base-ui/react/collapsible": { Collapsible: CollapsiblePrimitive },
 })
-const taskUI = load("../components/ai-elements/task.tsx", {
+const traceUI = load("../components/ui/trace.tsx", {
+  react: React,
   "react/jsx-runtime": jsxRuntime,
+  cn: { cn: (...classes) => classes.filter(Boolean).join(" ") },
   "@/components/ui/collapsible": collapsibleUI,
-  "@/lib/utils": { cn: (...classes) => classes.filter(Boolean).join(" ") },
-  "lucide-react": primitives(["ChevronDownIcon", "SearchIcon"]),
+  "lucide-react": primitives(["ChevronRightIcon"]),
 })
 const { ChatTool, ChatToolActivity } = load("../components/chat-tool.tsx", {
   "react/jsx-runtime": jsxRuntime,
   ai: { getToolName },
-  "lucide-react": primitives([
-    "CheckIcon",
-    "ChevronDownIcon",
-    "CircleDashedIcon",
-    "ClockIcon",
-    "XIcon",
-  ]),
-  "@/components/ui/collapsible": primitives(["CollapsibleTrigger"]),
-  "@/components/ai-elements/tool": toolUI,
-  "@/components/ai-elements/task": taskUI,
+  "lucide-react": primitives(["ListChecksIcon", "WrenchIcon"]),
+  "@/components/ui/code-block": primitives(["CodeBlock", "CodeBlockContent"]),
+  "@/components/ui/trace": traceUI,
 })
 for (const [state, label] of Object.entries({
   "input-streaming": "Preparing",
@@ -948,11 +939,11 @@ const activityMarkup = renderToStaticMarkup(
 )
 assert.match(activityMarkup, /20 actions completed/)
 assert.match(activityMarkup, /aria-expanded="false"/)
-assert.doesNotMatch(activityMarkup, /private-test-path|chat-tool group/)
+assert.doesNotMatch(activityMarkup, /private-test-path/)
 const activityTree = ChatToolActivity({ parts: twentyTools })
 assert.equal(activityTree.props.defaultOpen, false)
 assert.equal(
-  activityTree.props.children[1].props.children.length,
+  activityTree.props.children[1].props.children.props.children.length,
   20,
   "All tool details remain available on expansion"
 )
@@ -970,7 +961,7 @@ console.log(
   "Real collapsed activity renders one summary for 20 calls, keeps details for expansion, and reports live SDK state."
 )
 
-const { Chat } = load("../components/chat.tsx", {
+const chatDependencies = {
   "react/jsx-runtime": jsxRuntime,
   "next/image": {
     default: ({ unoptimized, ...props }) => {
@@ -980,16 +971,33 @@ const { Chat } = load("../components/chat.tsx", {
   },
   react: { ...React, useEffect: (effect) => connectionEffects.push(effect) },
   "@/components/chat-tool": { ChatTool, ChatToolActivity },
-  "@/components/ai-elements/reasoning": primitives([
-    "Reasoning",
-    "ReasoningTrigger",
-    "ReasoningContent",
-  ]),
   "@/components/chat-avatar": {
     ChatAvatar: ({ seed }) => React.createElement("i", { "data-avatar": seed }),
   },
-  "@/components/ui/dropdown-menu": primitives(["DropdownMenuGroup"]),
-  "lucide-react": primitives(["ChevronDownIcon"]),
+  "@/components/ui/dropdown-menu": primitives([
+    "DropdownMenu",
+    "DropdownMenuContent",
+    "DropdownMenuGroup",
+    "DropdownMenuLabel",
+    "DropdownMenuRadioGroup",
+    "DropdownMenuRadioItem",
+    "DropdownMenuTrigger",
+  ]),
+  "@/components/ui/input-group": primitives([
+    "InputGroup",
+    "InputGroupAddon",
+    "InputGroupButton",
+    "InputGroupTextarea",
+  ]),
+  "lucide-react": primitives([
+    "ArrowUpIcon",
+    "BrainIcon",
+    "CheckIcon",
+    "ChevronDownIcon",
+    "CopyIcon",
+    "MessageSquareIcon",
+    "SquareIcon",
+  ]),
   ai: { isToolUIPart, getToolName },
   "@ai-sdk/react": {
     useChat: () => ({
@@ -1020,40 +1028,59 @@ const { Chat } = load("../components/chat.tsx", {
     },
   },
   "@/actions/chat": { loadChatTranscript: loadTranscript },
-  "@/components/ai-elements/conversation": primitives([
-    "Conversation",
-    "ConversationContent",
-    "ConversationEmptyState",
-    "ConversationScrollButton",
-  ]),
-  "@/components/ai-elements/message": primitives([
-    "Message",
-    "MessageContent",
-    "MessageResponse",
-  ]),
-  "@/components/ai-elements/prompt-input": primitives([
-    "PromptInputActionMenu",
-    "PromptInputActionMenuTrigger",
-    "PromptInputActionMenuContent",
-    "PromptInputActionMenuItem",
-    "PromptInput",
-    "PromptInputBody",
-    "PromptInputFooter",
-    "PromptInputSubmit",
-    "PromptInputTextarea",
-  ]),
-  "@/components/ai-elements/tool": {
-    ...primitives(["Tool", "ToolContent"]),
-    ToolHeader: (props) => React.createElement("div", null, props.state),
-    ToolInput: ({ input }) =>
-      React.createElement("pre", null, JSON.stringify(input)),
-    ToolOutput: ({ output, errorText }) =>
-      React.createElement("pre", null, JSON.stringify(output), errorText),
-  },
+  "@/components/ai-elements/message": primitives(["MessageResponse"]),
   "@/components/ui/alert": primitives(["Alert", "AlertDescription"]),
   "@/components/ui/button": primitives(["Button"]),
   "@/components/ui/badge": primitives(["Badge"]),
-})
+  "@/components/ui/bubble": primitives(["Bubble", "BubbleContent"]),
+  "@/components/ui/marker": primitives([
+    "Marker",
+    "MarkerContent",
+    "MarkerIcon",
+  ]),
+  "@/components/ui/message": primitives([
+    "Message",
+    "MessageAvatar",
+    "MessageContent",
+    "MessageFooter",
+    "MessageHeader",
+  ]),
+  "@/components/ui/message-scroller": primitives([
+    "MessageScroller",
+    "MessageScrollerButton",
+    "MessageScrollerContent",
+    "MessageScrollerItem",
+    "MessageScrollerProvider",
+    "MessageScrollerViewport",
+  ]),
+  "@/components/ui/empty": primitives([
+    "Empty",
+    "EmptyContent",
+    "EmptyDescription",
+    "EmptyHeader",
+    "EmptyMedia",
+    "EmptyTitle",
+  ]),
+  "@/components/ui/spinner": primitives(["Spinner"]),
+  "@/components/ui/trace": primitives([
+    "Trace",
+    "TraceCollapsible",
+    "TraceCollapsibleContent",
+    "TraceCollapsibleTrigger",
+    "TraceIcon",
+    "TraceLine",
+    "TraceTitle",
+  ]),
+}
+chatDependencies["@/components/chat-message"] = load(
+  "../components/chat-message.tsx",
+  chatDependencies
+)
+chatDependencies["@/components/chat-composer"] = load(
+  "../components/chat-composer.tsx",
+  chatDependencies
+)
+const { Chat } = load("../components/chat.tsx", chatDependencies)
 renderedMessages[0].parts.push(
   {
     type: "tool-bash",
@@ -1143,6 +1170,7 @@ renderedMessages[0].parts.splice(
       botId: "bot_2",
       name: "Code reviewer",
       fromAvatar: "sender-avatar",
+      reason: "checking notes",
     },
   },
   { type: "data-bot-avatar", data: "receiver-avatar" }
@@ -1163,9 +1191,9 @@ console.log(
   "Group composer renders bot choices and sends the selected bot through transport clientData."
 )
 
-assert.match(groupMarkup, /Handed off to Code reviewer/)
+assert.match(groupMarkup, /Handed off to Code reviewer · checking notes/)
 assert.match(groupMarkup, /data-avatar="receiver-avatar"/)
-assert.match(groupMarkup, /data-avatar="receiver-avatar"><\/i><div><div>Done\./)
+assert.match(groupMarkup, /data-avatar="receiver-avatar"><\/i><\/div><div><div>Done\./)
 console.log(
   "Group replies use the persisted responder avatar rather than the current selection; direct replies omit it."
 )

@@ -1,79 +1,123 @@
 import Link from "next/link"
+import { BotIcon, ChevronRightIcon, UsersIcon } from "lucide-react"
 import { getUserChats } from "@/queries/chats"
 import { BotDialog } from "@/components/bot-dialog"
 import { ChatAvatar } from "@/components/chat-avatar"
 import { GroupChatAvatar } from "@/components/group-chat-avatar"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item"
+import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { ArrowUpRightIcon } from "lucide-react"
+
+const sections = {
+  direct: {
+    title: "Bots",
+    icon: BotIcon,
+    empty: "No bots yet",
+    hint: "Create a bot to start a conversation.",
+  },
+  group: {
+    title: "Group chats",
+    icon: UsersIcon,
+    empty: "No group chats yet",
+    hint: "Use New chat in the sidebar to put bots in one room.",
+  },
+}
 
 export default async function Page() {
   const chats = await getUserChats()
   return (
     <main className="flex min-h-svh flex-col">
-      <header className="flex h-14 items-center gap-3 border-b px-4 text-xs text-muted-foreground">
-        <SidebarTrigger /> Workspace
-      </header>
-      <div className="mx-auto w-full max-w-4xl px-6 py-12 sm:px-10 sm:py-16">
-        <p className="mb-3 text-xs text-muted-foreground">Your workspace</p>
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <h1 className="text-3xl font-medium tracking-tight">
-              {chats.length
-                ? "Pick up where you left off."
-                : "Give your ideas a collaborator."}
-            </h1>
-            <p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-              {chats.length
-                ? "Your bots, conversations, and shared work, all in one place."
-                : "Create a bot with its own instructions, memory, and workspace. Then start a conversation."}
-            </p>
-          </div>
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <SidebarTrigger />
+        <Separator orientation="vertical" className="h-4" />
+        <h1 className="text-sm font-medium">Home</h1>
+        <div className="ml-auto">
           <BotDialog />
         </div>
-        <div className="mt-10 divide-y divide-border border-y border-border">
-          {chats.map((chat) => (
-            <Link
-              key={chat.id}
-              href={`/chats/${chat.id}`}
-              className="group flex items-center gap-4 py-5 transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+      </header>
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-4 py-8 sm:px-6">
+        {(["direct", "group"] as const).map((kind) => {
+          const section = sections[kind]
+          const items = chats.filter((chat) => chat.kind === kind)
+          return (
+            <section
+              key={kind}
+              aria-labelledby={`section-${kind}`}
+              className="flex flex-col gap-3"
             >
-              {chat.kind === "group" ? (
-                <GroupChatAvatar members={chat.members} className="size-10" />
+              <h2
+                id={`section-${kind}`}
+                className="font-heading text-sm font-medium text-muted-foreground"
+              >
+                {section.title} · {items.length}
+              </h2>
+              {items.length ? (
+                <ItemGroup className="gap-2">
+                  {items.map((chat) => (
+                    <Item
+                      key={chat.id}
+                      variant="outline"
+                      render={<Link href={`/chats/${chat.id}`} />}
+                    >
+                      <ItemMedia>
+                        {chat.kind === "group" ? (
+                          <GroupChatAvatar
+                            members={chat.members}
+                            className="size-9"
+                          />
+                        ) : (
+                          <ChatAvatar
+                            seed={chat.botAvatar ?? chat.id}
+                            className="size-9"
+                          />
+                        )}
+                      </ItemMedia>
+                      <ItemContent>
+                        <ItemTitle>
+                          {chat.name ?? chat.botName ?? "Untitled chat"}
+                        </ItemTitle>
+                        <ItemDescription className="line-clamp-1">
+                          {chat.lastMessagePreview ||
+                            (chat.kind === "group"
+                              ? `${chat.members.length} bots`
+                              : "No messages yet")}
+                        </ItemDescription>
+                      </ItemContent>
+                      <ItemActions>
+                        <ChevronRightIcon className="text-muted-foreground" />
+                      </ItemActions>
+                    </Item>
+                  ))}
+                </ItemGroup>
               ) : (
-                <ChatAvatar
-                  seed={chat.botAvatar ?? chat.id}
-                  className="size-10"
-                />
+                <Empty className="border border-dashed">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <section.icon />
+                    </EmptyMedia>
+                    <EmptyTitle>{section.empty}</EmptyTitle>
+                    <EmptyDescription>{section.hint}</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               )}
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-medium">
-                  {chat.name ?? chat.botName ?? "Untitled chat"}
-                </h2>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {chat.lastMessagePreview ||
-                    (chat.kind === "group"
-                      ? "Group conversation"
-                      : "Ready for your next task")}
-                </p>
-              </div>
-              <span className="hidden text-[10px] text-muted-foreground sm:block">
-                {chat.kind === "group"
-                  ? `${chat.members.length} bots`
-                  : "Private bot"}
-              </span>
-              <ArrowUpRightIcon
-                aria-hidden="true"
-                className="mr-2 size-4 text-muted-foreground"
-              />
-            </Link>
-          ))}
-        </div>
-        {!chats.length && (
-          <p className="mt-5 text-xs text-muted-foreground">
-            Single-bot chats include a sandbox desktop. Group chats keep the
-            focus on conversation.
-          </p>
-        )}
+            </section>
+          )
+        })}
       </div>
     </main>
   )
