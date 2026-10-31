@@ -237,3 +237,9 @@ Implement each service on its named branch when authorized. Integrate completed 
   send/stream/stop, group picker and dark mode is pending. No commit or push.
 - Group bots no longer hand off for job fit, only for missing context; handoffs
   carry a short reason shown in the divider. Worker 20261031.2 deployed locally.
+
+### Batched desktop actions — implemented; locally verified (2026-10-31)
+
+- Added direct-chat `desktopActions`: 1–10 ordered GUI actions with an automatic final screenshot, reusing the existing commands, validation, queue, sandbox identity and screenshot conversion. Existing single-action tools remain. Direct chats now allow 60 steps per turn; group chats keep 20.
+- Bot instructions prefer batching known sequences and require a new observation before visual decisions. Chat rendering preserves private/shared screenshot behavior for batches.
+- Type checking and stubbed sandbox/chat checks cover ordering, no interleaving, handle cleanup, input limits, cancellation, partial failure, model image conversion and screenshot privacy. Deployed locally as worker version `20261031.4` and the web image was rebuilt. A live 50-tool flight-research turn on `20261031.3` stalled when the 0.5 GB `small-1x` worker ran out of memory (peak 438 MB); the chat task now uses `small-2x` and sends only the two most recent screenshots to the model. A full long desktop turn on `20261031.4` remains unverified.

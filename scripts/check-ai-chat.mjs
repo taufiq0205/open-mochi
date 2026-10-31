@@ -301,7 +301,8 @@ try {
   assert.deepEqual(result.tools, sandboxTools)
   assert.equal(result.tools.handoff, undefined)
   assert.ok(result.tools.viewScreen.toModelOutput)
-  assert.equal(typeof result.stopWhen, "function")
+  assert.equal(result.stopWhen({ steps: Array(59) }), false)
+  assert.equal(result.stopWhen({ steps: Array(60) }), true)
   assert.equal(result.model, "deepseek-flash")
   assert.equal(result.abortSignal, signal)
   assert.deepEqual(result.messages, messages)
@@ -837,6 +838,31 @@ const renderedMessages = [
         output: { output: "/home/test" },
       },
       {
+        type: "tool-desktopActions",
+        toolCallId: "batch_private",
+        state: "output-available",
+        input: { actions: [{ action: "keyboardType", text: "Tokyo" }] },
+        output: {
+          screenshot: "SECRET_BATCH_SCREENSHOT_BYTES",
+          showInChat: false,
+          completed: 1,
+        },
+      },
+      {
+        type: "tool-desktopActions",
+        toolCallId: "batch_shared",
+        state: "output-available",
+        input: {
+          actions: [{ action: "keyboardType", text: "Tokyo" }],
+          showInChat: true,
+        },
+        output: {
+          screenshot: "SHARED_BATCH_SCREENSHOT_BYTES",
+          showInChat: true,
+          completed: 1,
+        },
+      },
+      {
         type: "tool-viewScreen",
         toolCallId: "screen_1",
         state: "output-available",
@@ -1126,7 +1152,7 @@ finishStart()
 await new Promise(setImmediate)
 assert.equal(resumeCalls, 1, "Navigating away must cancel deferred resume")
 assert.doesNotMatch(markup, /reply-bot-avatar/)
-assert.match(markup, /Working · [0-9]+ actions/)
+assert.match(markup, /Working · [0-9]+ actions?/)
 assert.match(markup, /mouse Click/)
 assert.match(markup, /Failed/)
 assert.doesNotMatch(
@@ -1149,9 +1175,10 @@ assert.match(
 )
 assert.doesNotMatch(
   markup,
-  /SECRET_SCREENSHOT_BYTES|SECRET_ERROR_SCREENSHOT_BYTES/
+  /SECRET_SCREENSHOT_BYTES|SECRET_ERROR_SCREENSHOT_BYTES|SECRET_BATCH_SCREENSHOT_BYTES/
 )
 assert.match(markup, /src="data:image\/png;base64,SHARED_SCREENSHOT_BYTES"/)
+assert.match(markup, /src="data:image\/png;base64,SHARED_BATCH_SCREENSHOT_BYTES"/)
 assert.match(markup, /alt="Agent desktop screenshot"/)
 console.log(
   "Chat render checks passed: text, static/dynamic tool calls, pending/errors, and selective screenshot display (stubbed UI boundaries)."
@@ -1299,3 +1326,32 @@ assert.match(failedHandoffMarkup, /You are already this bot/)
 console.log(
   "Handoff-only messages keep their indicator without an empty reply; handoff errors remain visible."
 )
+
+const { ChatMessage } = chatDependencies["@/components/chat-message"]
+const routineTool = (id) => ({
+  type: "tool-bash",
+  toolCallId: id,
+  state: "output-available",
+  input: { command: "pwd" },
+  output: { stdout: "/home/test" },
+})
+const segmentedMarkup = renderToStaticMarkup(
+  React.createElement(ChatMessage, {
+    streaming: false,
+    message: {
+      id: "segmented",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "First." },
+        routineTool("s1"),
+        routineTool("s2"),
+        { type: "text", text: "Second." },
+        routineTool("s3"),
+        routineTool("s4"),
+        routineTool("s5"),
+      ],
+    },
+  })
+)
+assert.match(segmentedMarkup, /First\.[\s\S]*2 actions completed[\s\S]*Second\.[\s\S]*3 actions completed/)
+console.log("Routine tool activity is grouped between text parts.")

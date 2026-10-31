@@ -120,7 +120,7 @@ export function ChatToolActivity({ parts }: { parts: ToolPart[] }) {
               key={part.toolCallId}
               part={part}
               output={
-                getToolName(part) === "viewScreen"
+                ["viewScreen", "desktopActions"].includes(getToolName(part))
                   ? part.state === "output-available"
                     ? "Screen inspected."
                     : undefined

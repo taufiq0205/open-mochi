@@ -1,4 +1,4 @@
-import { tool } from "ai"
+import { tool, type ModelMessage } from "ai"
 import { logger } from "@sentry/core"
 import type { Sandbox } from "@alibaba-group/opensandbox"
 import { randomUUID } from "node:crypto"
@@ -21,6 +21,193 @@ async function desktopCommand(sandbox: Sandbox, command: string[]) {
   if (result.error || result.exitCode !== 0)
     throw new Error("Desktop command failed")
   return { success: true }
+}
+
+const mouseClickSchema = z.object({
+  ...position,
+  button: z.enum(["left", "right", "middle"]).default("left"),
+  double: z.boolean().default(false),
+})
+const mouseMoveSchema = z.object(position)
+const mouseScrollSchema = z.object({
+  ...position,
+  direction: z.enum(["up", "down", "left", "right"]),
+  amount: z.number().int().min(1).max(100).default(3),
+})
+const keyboardTypeSchema = z.object({ text: z.string().min(1).max(20000) })
+const keyboardPressSchema = z.object({
+  key: z.string().min(1).max(30),
+  modifiers: z
+    .array(z.enum(["ctrl", "alt", "shift", "cmd"]))
+    .max(4)
+    .optional(),
+})
+
+const desktopOperations = {
+  mouseClick: {
+    description:
+      "Click a screen coordinate. Inspect the screen before choosing coordinates.",
+    inputSchema: mouseClickSchema,
+    execute: async (
+      sandbox: Sandbox,
+      { x, y, button, double }: z.infer<typeof mouseClickSchema>
+    ) => {
+      await desktopCommand(sandbox, [
+        "xdotool",
+        "mousemove",
+        "--sync",
+        String(x),
+        String(y),
+        "click",
+        "--repeat",
+        double ? "2" : "1",
+        String({ left: 1, right: 3, middle: 2 }[button]),
+      ])
+      return { clicked: true }
+    },
+  },
+  mouseMove: {
+    description: "Move the mouse to a screen coordinate.",
+    inputSchema: mouseMoveSchema,
+    execute: (sandbox: Sandbox, { x, y }: z.infer<typeof mouseMoveSchema>) =>
+      desktopCommand(sandbox, [
+        "xdotool",
+        "mousemove",
+        "--sync",
+        String(x),
+        String(y),
+      ]),
+  },
+  mouseScroll: {
+    description: "Scroll at a screen coordinate. Amount is scroll wheel ticks.",
+    inputSchema: mouseScrollSchema,
+    execute: async (
+      sandbox: Sandbox,
+      { x, y, direction, amount }: z.infer<typeof mouseScrollSchema>
+    ) => {
+      const button = { up: 4, down: 5, left: 6, right: 7 }[direction]
+      await desktopCommand(sandbox, [
+        "xdotool",
+        "mousemove",
+        "--sync",
+        String(x),
+        String(y),
+        "click",
+        "--repeat",
+        String(amount),
+        String(button),
+      ])
+      return { scrolled: true }
+    },
+  },
+  keyboardType: {
+    description:
+      "Type text into the focused desktop control. Newlines press Enter.",
+    inputSchema: keyboardTypeSchema,
+    execute: async (
+      sandbox: Sandbox,
+      { text }: z.infer<typeof keyboardTypeSchema>
+    ) => {
+      await desktopCommand(sandbox, [
+        "xdotool",
+        "type",
+        "--clearmodifiers",
+        "--",
+        text,
+      ])
+      return { typed: true }
+    },
+  },
+  keyboardPress: {
+    description:
+      "Press a key (such as enter, tab, escape, or a letter) with optional modifiers.",
+    inputSchema: keyboardPressSchema,
+    execute: async (
+      sandbox: Sandbox,
+      { key, modifiers }: z.infer<typeof keyboardPressSchema>
+    ) => {
+      const keys: Record<string, string> = {
+        enter: "Return",
+        escape: "Escape",
+        esc: "Escape",
+        tab: "Tab",
+        backspace: "BackSpace",
+        space: "space",
+        delete: "Delete",
+        up: "Up",
+        down: "Down",
+        left: "Left",
+        right: "Right",
+      }
+      const chord = [
+        ...(modifiers ?? []).map((key) => (key === "cmd" ? "super" : key)),
+        keys[key.toLowerCase()] ?? key,
+      ].join("+")
+      await desktopCommand(sandbox, [
+        "xdotool",
+        "key",
+        "--clearmodifiers",
+        "--",
+        chord,
+      ])
+      return { pressed: true }
+    },
+  },
+}
+
+// Old screenshots are stale and each one is a full base64 PNG resent on every
+// step; keeping them all exhausts the worker's memory on long desktop tasks.
+export function withRecentScreenshots(messages: ModelMessage[], keep = 2) {
+  let seen = 0
+  return messages
+    .toReversed()
+    .map((message) => {
+      if (message.role !== "tool") return message
+      return {
+        ...message,
+        content: message.content
+          .toReversed()
+          .map((part) => {
+            if (part.type !== "tool-result" || part.output.type !== "content")
+              return part
+            const value = part.output.value
+            if (!value.some((item) => item.type === "file")) return part
+            if (++seen <= keep) return part
+            return {
+              ...part,
+              output: {
+                ...part.output,
+                value: value.map((item) =>
+                  item.type === "file"
+                    ? {
+                        type: "text" as const,
+                        text: "[Earlier screenshot omitted]",
+                      }
+                    : item
+                ),
+              },
+            }
+          })
+          .toReversed(),
+      }
+    })
+    .toReversed()
+}
+
+async function captureScreen(sandbox: Sandbox, showInChat: boolean) {
+  const path = `/tmp/screenshot-${randomUUID()}.png`
+  try {
+    await desktopCommand(sandbox, ["scrot", "-p", path])
+    const screenshot = Buffer.from(
+      await sandboxFiles(sandbox).readBytes(path)
+    ).toString("base64")
+    return {
+      screenshot: z.string().min(1).parse(screenshot),
+      showInChat,
+    }
+  } finally {
+    await sandboxFiles(sandbox).deleteFiles([path])
+  }
 }
 
 export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
@@ -53,7 +240,7 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
     return result
   }
 
-  return {
+  const tools = {
     readMemory: tool({
       description:
         "Read this bot's persistent MEMORY.md, shared across its private and group chats.",
@@ -159,140 +346,46 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
         }, options),
     }),
     mouseClick: tool({
-      description:
-        "Click a screen coordinate. Inspect the screen before choosing coordinates.",
-      inputSchema: z.object({
-        ...position,
-        button: z.enum(["left", "right", "middle"]).default("left"),
-        double: z.boolean().default(false),
-      }),
-      execute: ({ x, y, button, double }, options) =>
+      ...desktopOperations.mouseClick,
+      execute: (input, options) =>
         run(
-          async (sandbox) => {
-            await desktopCommand(sandbox, [
-              "xdotool",
-              "mousemove",
-              "--sync",
-              String(x),
-              String(y),
-              "click",
-              "--repeat",
-              double ? "2" : "1",
-              String({ left: 1, right: 3, middle: 2 }[button]),
-            ])
-            return { clicked: true }
-          },
+          (sandbox) => desktopOperations.mouseClick.execute(sandbox, input),
           options,
           true
         ),
     }),
     mouseMove: tool({
-      description: "Move the mouse to a screen coordinate.",
-      inputSchema: z.object(position),
-      execute: ({ x, y }, options) =>
+      ...desktopOperations.mouseMove,
+      execute: (input, options) =>
         run(
-          (sandbox) =>
-            desktopCommand(sandbox, [
-              "xdotool",
-              "mousemove",
-              "--sync",
-              String(x),
-              String(y),
-            ]),
+          (sandbox) => desktopOperations.mouseMove.execute(sandbox, input),
           options,
           true
         ),
     }),
     mouseScroll: tool({
-      description:
-        "Scroll at a screen coordinate. Amount is scroll wheel ticks.",
-      inputSchema: z.object({
-        ...position,
-        direction: z.enum(["up", "down", "left", "right"]),
-        amount: z.number().int().min(1).max(100).default(3),
-      }),
-      execute: ({ x, y, direction, amount }, options) =>
+      ...desktopOperations.mouseScroll,
+      execute: (input, options) =>
         run(
-          async (sandbox) => {
-            const button = { up: 4, down: 5, left: 6, right: 7 }[direction]
-            await desktopCommand(sandbox, [
-              "xdotool",
-              "mousemove",
-              "--sync",
-              String(x),
-              String(y),
-              "click",
-              "--repeat",
-              String(amount),
-              String(button),
-            ])
-            return { scrolled: true }
-          },
+          (sandbox) => desktopOperations.mouseScroll.execute(sandbox, input),
           options,
           true
         ),
     }),
     keyboardType: tool({
-      description:
-        "Type text into the focused desktop control. Newlines press Enter.",
-      inputSchema: z.object({ text: z.string().min(1).max(20000) }),
-      execute: ({ text }, options) =>
+      ...desktopOperations.keyboardType,
+      execute: (input, options) =>
         run(
-          async (sandbox) => {
-            await desktopCommand(sandbox, [
-              "xdotool",
-              "type",
-              "--clearmodifiers",
-              "--",
-              text,
-            ])
-            return { typed: true }
-          },
+          (sandbox) => desktopOperations.keyboardType.execute(sandbox, input),
           options,
           true
         ),
     }),
     keyboardPress: tool({
-      description:
-        "Press a key (such as enter, tab, escape, or a letter) with optional modifiers.",
-      inputSchema: z.object({
-        key: z.string().min(1).max(30),
-        modifiers: z
-          .array(z.enum(["ctrl", "alt", "shift", "cmd"]))
-          .max(4)
-          .optional(),
-      }),
-      execute: ({ key, modifiers }, options) =>
+      ...desktopOperations.keyboardPress,
+      execute: (input, options) =>
         run(
-          async (sandbox) => {
-            const keys: Record<string, string> = {
-              enter: "Return",
-              escape: "Escape",
-              esc: "Escape",
-              tab: "Tab",
-              backspace: "BackSpace",
-              space: "space",
-              delete: "Delete",
-              up: "Up",
-              down: "Down",
-              left: "Left",
-              right: "Right",
-            }
-            const chord = [
-              ...(modifiers ?? []).map((key) =>
-                key === "cmd" ? "super" : key
-              ),
-              keys[key.toLowerCase()] ?? key,
-            ].join("+")
-            await desktopCommand(sandbox, [
-              "xdotool",
-              "key",
-              "--clearmodifiers",
-              "--",
-              chord,
-            ])
-            return { pressed: true }
-          },
+          (sandbox) => desktopOperations.keyboardPress.execute(sandbox, input),
           options,
           true
         ),
@@ -302,25 +395,7 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
         "Inspect the current desktop screenshot. Set showInChat to true when the user asks to see the screen or an image helps explain the result. Leave it false for routine internal inspection.",
       inputSchema: z.object({ showInChat: z.boolean().default(false) }),
       execute: ({ showInChat = false }, options) =>
-        run(
-          async (sandbox) => {
-            const path = `/tmp/screenshot-${randomUUID()}.png`
-            try {
-              await desktopCommand(sandbox, ["scrot", "-p", path])
-              const screenshot = Buffer.from(
-                await sandboxFiles(sandbox).readBytes(path)
-              ).toString("base64")
-              return {
-                screenshot: z.string().min(1).parse(screenshot),
-                showInChat,
-              }
-            } finally {
-              await sandboxFiles(sandbox).deleteFiles([path])
-            }
-          },
-          options,
-          true
-        ),
+        run((sandbox) => captureScreen(sandbox, showInChat), options, true),
       toModelOutput: ({ output }) => ({
         type: "content",
         value: [
@@ -335,6 +410,78 @@ export function createSandboxTools(resolveSandbox: () => Promise<Sandbox>) {
           },
         ],
       }),
+    }),
+  }
+  return {
+    ...tools,
+    desktopActions: tool({
+      description:
+        "Run 1–10 known desktop actions in order, then return a screenshot. Inspect the screen first; stop the batch before any action that needs a new visual decision. Prefer this over separate click/type/key/screenshot calls. Set showInChat to true to share the screenshot with the user. Stops on the first failure; earlier actions are not rolled back.",
+      inputSchema: z.object({
+        actions: z
+          .array(
+            z.discriminatedUnion("action", [
+              mouseClickSchema.extend({ action: z.literal("mouseClick") }),
+              mouseMoveSchema.extend({ action: z.literal("mouseMove") }),
+              mouseScrollSchema.extend({ action: z.literal("mouseScroll") }),
+              keyboardTypeSchema.extend({ action: z.literal("keyboardType") }),
+              keyboardPressSchema.extend({
+                action: z.literal("keyboardPress"),
+              }),
+              z.object({
+                action: z.literal("wait"),
+                milliseconds: z.number().int().min(1).max(3000),
+              }),
+            ])
+          )
+          .min(1)
+          .max(10),
+        showInChat: z.boolean().default(false),
+      }),
+      execute: ({ actions, showInChat }, options) =>
+        run(
+          async (sandbox) => {
+            for (const action of actions) {
+              options.abortSignal?.throwIfAborted()
+              switch (action.action) {
+                case "wait":
+                  await desktopCommand(sandbox, [
+                    "sleep",
+                    String(action.milliseconds / 1000),
+                  ])
+                  break
+                case "mouseClick":
+                  await desktopOperations.mouseClick.execute(sandbox, action)
+                  break
+                case "mouseMove":
+                  await desktopOperations.mouseMove.execute(sandbox, action)
+                  break
+                case "mouseScroll":
+                  await desktopOperations.mouseScroll.execute(sandbox, action)
+                  break
+                case "keyboardType":
+                  await desktopOperations.keyboardType.execute(sandbox, action)
+                  break
+                case "keyboardPress":
+                  await desktopOperations.keyboardPress.execute(sandbox, action)
+                  break
+              }
+            }
+            options.abortSignal?.throwIfAborted()
+            return {
+              ...(await captureScreen(sandbox, showInChat)),
+              completed: actions.length,
+            }
+          },
+          options,
+          true
+        ),
+      toModelOutput: ({ output, toolCallId }) =>
+        tools.viewScreen.toModelOutput!({
+          output,
+          toolCallId,
+          input: { showInChat: output.showInChat },
+        }),
     }),
   }
 }

@@ -1,10 +1,14 @@
 import assert from "node:assert/strict"
 import { convertToModelMessages } from "ai"
-import { createSandboxTools } from "../lib/sandbox-tools.ts"
+import {
+  createSandboxTools,
+  withRecentScreenshots,
+} from "../lib/sandbox-tools.ts"
 
 const calls = []
 let size = 10
 let failure = false
+let onCommand = () => {}
 let closed = 0
 const sandbox = {
   close: async () => {
@@ -13,6 +17,7 @@ const sandbox = {
   commands: {
     run: async (command, options) => {
       calls.push(["command", command, options])
+      onCommand(command)
       if (failure) throw new Error("secret provider response")
       if (Array.isArray(command))
         return { exitCode: 0, logs: { stdout: [], stderr: [] } }
@@ -211,3 +216,183 @@ assert.equal(closed, resolutions)
 console.log(
   "OpenSandbox tools passed: nonzero exits, filesystem identity, coordinate zero, argv-safe input, horizontal scroll, limits and handle cleanup."
 )
+
+// One model call runs a complete known sequence and captures its result.
+const batchInput = tools.desktopActions.inputSchema.parse({
+  actions: [
+    { action: "mouseClick", x: 0, y: 10 },
+    { action: "keyboardType", text: "Tokyo '$x'" },
+    { action: "keyboardPress", key: "enter" },
+    { action: "wait", milliseconds: 250 },
+  ],
+})
+const beforeBatch = calls.length
+const beforeResolve = resolutions
+const [batch] = await Promise.all([
+  tools.desktopActions.execute(batchInput, options),
+  tools.mouseMove.execute({ x: 9, y: 9 }, options),
+])
+assert.equal(batch.completed, 4)
+assert.equal(batch.showInChat, false)
+assert.equal(batch.screenshot, "c2NyZWVu")
+assert.equal(
+  resolutions - beforeResolve,
+  2,
+  "One handle per batch, one for the queued tool"
+)
+assert.deepEqual(
+  calls.slice(beforeBatch).map((call) => call[1]),
+  [
+    [
+      "xdotool",
+      "mousemove",
+      "--sync",
+      "0",
+      "10",
+      "click",
+      "--repeat",
+      "1",
+      "1",
+    ],
+    ["xdotool", "type", "--clearmodifiers", "--", "Tokyo '$x'"],
+    ["xdotool", "key", "--clearmodifiers", "--", "Return"],
+    ["sleep", "0.25"],
+    calls[beforeBatch + 4][1],
+    ["xdotool", "mousemove", "--sync", "9", "9"],
+  ]
+)
+assert.equal(calls[beforeBatch + 4][1][0], "scrot")
+const batchHistory = await convertToModelMessages(
+  [
+    {
+      id: "batch",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-desktopActions",
+          toolCallId: "batch_1",
+          state: "output-available",
+          input: batchInput,
+          output: batch,
+        },
+      ],
+    },
+  ],
+  { tools }
+)
+assert.ok(JSON.stringify(batchHistory).includes('"mediaType":"image/png"'))
+for (const actions of [
+  [],
+  Array(11).fill({ action: "mouseMove", x: 0, y: 0 }),
+  [{ action: "wait", milliseconds: 3001 }],
+  [{ action: "mouseClick", x: -1, y: 0 }],
+  [{ action: "bash", command: "bad" }],
+])
+  assert.equal(
+    tools.desktopActions.inputSchema.safeParse({ actions }).success,
+    false
+  )
+failure = true
+const beforeFailedBatch = calls.length
+await assert.rejects(
+  tools.desktopActions.execute(batchInput, options),
+  /Sandbox operation failed/
+)
+assert.equal(
+  calls.length - beforeFailedBatch,
+  1,
+  "Stop at the first failed action"
+)
+failure = false
+const beforeAbortedBatch = calls.length
+await assert.rejects(
+  tools.desktopActions.execute(batchInput, {
+    ...options,
+    abortSignal: controller.signal,
+  }),
+  /Sandbox operation failed/
+)
+assert.equal(calls.length, beforeAbortedBatch)
+assert.equal(closed, resolutions)
+console.log(
+  "Desktop batches passed: ordered actions, automatic screenshot, no interleaving, one handle, limits, failure stop and cancellation (stubbed)."
+)
+
+let actionCount = 0
+onCommand = () => {
+  if (++actionCount === 2) throw new Error("private failure")
+}
+const beforePartial = calls.length
+await assert.rejects(
+  tools.desktopActions.execute(batchInput, options),
+  /Sandbox operation failed/
+)
+assert.equal(
+  calls.length - beforePartial,
+  2,
+  "Do not execute later actions after partial failure"
+)
+const midBatch = new AbortController()
+onCommand = () => midBatch.abort()
+const beforeMidAbort = calls.length
+await assert.rejects(
+  tools.desktopActions.execute(batchInput, {
+    ...options,
+    abortSignal: midBatch.signal,
+  }),
+  /Sandbox operation failed/
+)
+assert.equal(
+  calls.length - beforeMidAbort,
+  1,
+  "Cancellation prevents the next action"
+)
+onCommand = () => {}
+const sharedBatch = await tools.desktopActions.execute(
+  { ...batchInput, showInChat: true },
+  options
+)
+assert.equal(sharedBatch.showInChat, true)
+assert.equal(closed, resolutions)
+console.log(
+  "Desktop batches stop after partial failure or mid-batch cancellation, release handles and recover on the next call."
+)
+
+const screenResult = (id) => ({
+  role: "tool",
+  content: [
+    {
+      type: "tool-result",
+      toolCallId: id,
+      toolName: "viewScreen",
+      output: {
+        type: "content",
+        value: [
+          { type: "text", text: "Current screen." },
+          {
+            type: "file",
+            mediaType: "image/png",
+            data: { type: "data", data: id },
+          },
+        ],
+      },
+    },
+  ],
+})
+const userMessage = { role: "user", content: "Find flights" }
+const pruned = withRecentScreenshots([
+  userMessage,
+  screenResult("old"),
+  screenResult("middle"),
+  screenResult("recent"),
+])
+assert.equal(pruned[0], userMessage)
+assert.deepEqual(pruned[1].content[0].output.value, [
+  { type: "text", text: "Current screen." },
+  { type: "text", text: "[Earlier screenshot omitted]" },
+])
+assert.deepEqual(pruned.slice(2), [
+  screenResult("middle"),
+  screenResult("recent"),
+])
+console.log("Model history keeps only the two most recent screenshots.")

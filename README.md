@@ -9,102 +9,79 @@ Trigger.dev, and OpenSandbox. Chat uses the DeepSeek API; Sentry is optional.
 There are no subscriptions or usage allowances in the application. You pay any
 external provider costs directly.
 
-## Before you start
+## Requirements
 
-- Docker Engine with Compose; on macOS, use OrbStack. Allow at least **7 CPUs and
-  14 GB RAM for Trigger and its workers**, plus room for the app and bot sandboxes.
-- Node.js **24** and npm for the one-time worker deployment.
-- A DeepSeek API key with available credits, and internet access for image,
-  package, and build-time font downloads. No GPU is required.
+- Docker with Compose (OrbStack on macOS), with at least **7 CPUs and 14 GB RAM**
+  free for Trigger and its workers, plus room for the app and sandboxes.
+- Node.js **24** and npm.
+- A DeepSeek API key with credits. No GPU is needed.
 
-The steps below target a local OrbStack installation. Linux and remote-host
-networking require the adjustments in [Trigger setup](docs/trigger.md) and
-[sandbox setup](docs/sandboxes.md).
+These steps target local OrbStack. For Linux or a remote host, see
+[Trigger setup](docs/trigger.md) and [sandbox setup](docs/sandboxes.md).
 
-## First-time setup
+## Setup
 
-### 1. Configure the application
+1. **Configure the app.**
 
-```sh
-git clone https://github.com/taufiq0205/open-mochi.git
-cd open-mochi
-cp .env.example .env
-chmod 600 .env
-```
+   ```sh
+   git clone https://github.com/taufiq0205/open-mochi.git
+   cd open-mochi
+   cp .env.example .env && chmod 600 .env
+   ```
 
-Edit `.env`:
+   In `.env`, set `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and
+   `OPEN_SANDBOX_API_KEY` to separate `openssl rand -hex 32` values, and set
+   `DEEPSEEK_API_KEY`. Keep the other defaults and keep these secrets stable.
 
-| Setting | Value |
-| --- | --- |
-| `POSTGRES_PASSWORD` | Generate with `openssl rand -hex 32` |
-| `BETTER_AUTH_SECRET` | Generate another independent value |
-| `OPEN_SANDBOX_API_KEY` | Generate another independent value |
-| `DEEPSEEK_API_KEY` | Your DeepSeek API key |
+2. **Configure Trigger.** Follow [Trigger first setup](docs/trigger.md#first-setup)
+   to create `infra/trigger/.env`, the registry password file, and the Docker HTTP
+   registry setting.
 
-Keep the default localhost URLs for local use. Leave Sentry settings blank to
-skip monitoring. Keep these secrets stable across restarts.
+3. **Create the database and start the stack.**
 
-### 2. Set up Trigger and initialize the database
+   ```sh
+   docker compose up -d --wait postgres
+   docker compose run --rm db-tools
+   docker compose up -d --build --wait
+   ```
 
-Follow [Trigger first setup](docs/trigger.md#first-setup) to create the platform
-environment file, registry credentials, and Docker HTTP registry configuration.
-These are required before Compose can start.
+4. **Create the Trigger project.** Open http://localhost:8030 and sign in with
+   your allowed email. The sign-in link is in `docker compose logs trigger-webapp`.
+   Create an organization and project, then copy its project ref and
+   **Production** key into `.env` as `TRIGGER_PROJECT_REF` and `TRIGGER_SECRET_KEY`.
 
-Initialize the application database, then start the services:
+5. **Deploy the chat worker.** Follow [Deploy the worker](docs/trigger.md#deploy-the-worker).
+   It also covers the worker's own environment variables, since `.env` is not
+   copied to the worker. Then rebuild the web app:
 
-```sh
-docker compose up -d --wait postgres
-docker compose run --rm db-tools
-docker compose up -d --build --wait
-```
+   ```sh
+   docker compose up -d --build --wait web
+   ```
 
-For an existing database, back up first and review any proposed schema deletion.
-Schema changes are never applied automatically at app startup.
+6. **Try it.** Open http://localhost:3000, create an account and a bot, and start
+   a chat. Check that the `pause-idle-opensandboxes` schedule is active in Trigger.
 
-### 3. Connect and deploy the chat worker
-
-Open **http://localhost:8030**. Sign in using your allowed operator email; the
-local sign-in link appears in the `trigger-webapp` logs. Create an organization
-and project, then copy its project ref and **Production** environment key into
-root `.env` as `TRIGGER_PROJECT_REF` and `TRIGGER_SECRET_KEY`.
-
-Follow [Deploy the worker](docs/trigger.md#deploy-the-worker) to install the local
-CLI profile, configure the project's Production variables, and deploy the tasks.
-The worker needs the application database credentials, DeepSeek key, and
-OpenSandbox settings too; root `.env` is not automatically copied to it.
-
-After deploying, rebuild the web service and confirm the
-`pause-idle-opensandboxes` schedule is active in Trigger:
-
-```sh
-docker compose up -d --build --wait web
-```
-
-Open **http://localhost:3000**, create an account, create a bot, and start a chat.
-Test a sandbox tool and open the bot desktop to verify the full setup.
+Schema changes never run at startup. Back up an existing database before running
+`db-tools` and review any schema deletion it proposes.
 
 ## Everyday use
 
-Once configuration, database initialization, and worker deployment are complete:
-
 ```sh
-docker compose up -d --build  # Start or rebuild the stack
-docker compose ps           # Check service health
-docker compose stop         # Stop without removing data
+docker compose up -d --build   # start or rebuild
+docker compose ps              # check health
+docker compose stop            # stop and keep data
 ```
 
-Application code changes that affect tasks also require a separate worker
-redeployment. Rebuilding the web image does not deploy workers.
+After changing code under `trigger/` or code it imports, redeploy the worker
+(step 5). Rebuilding the web image does not update the worker.
 
-If chat stalls, check the deployed worker and its Production variables first:
+If chat stalls, check the logs and the worker's Production variables:
 
 ```sh
 docker compose logs --tail=100 web trigger-webapp
-curl --fail http://localhost:3000/healthz
 ```
 
-`/healthz` checks only the web process. It does not verify login, inference,
-worker execution, desktop access, or telemetry.
+`curl http://localhost:3000/healthz` checks only the web process.
 
 ## Architecture
 

@@ -112,7 +112,7 @@ export function ChatMessage({
     if (output && typeof output === "object") {
       if ("error" in output) return false
       if (
-        getToolName(part) === "viewScreen" &&
+        ["viewScreen", "desktopActions"].includes(getToolName(part)) &&
         "showInChat" in output &&
         output.showInChat === true
       )
@@ -129,10 +129,13 @@ export function ChatMessage({
   // Text parts stand alone; consecutive reasoning/tool rows share one Trace.
   const blocks: ReactNode[] = []
   let run: ReactNode[] = []
+  // Routine tools between two text parts collapse into one activity row.
+  let activity: typeof routineTools | undefined
   const endRun = () => {
     if (run.length)
       blocks.push(<Trace key={`trace-${blocks.length}`}>{run}</Trace>)
     run = []
+    activity = undefined
   }
   visibleParts.forEach((part, index) => {
     if (part.type === "text") {
@@ -175,11 +178,18 @@ export function ChatMessage({
     }
     if (!isToolUIPart(part)) return
     if (routineTools.includes(part)) {
-      if (part === routineTools[0])
-        run.push(<ChatToolActivity key="tool-activity" parts={routineTools} />)
+      if (!activity) {
+        activity = []
+        run.push(
+          <ChatToolActivity key={`tool-activity-${index}`} parts={activity} />
+        )
+      }
+      activity.push(part)
       return
     }
-    const screenshot = getToolName(part) === "viewScreen"
+    const screenshot = ["viewScreen", "desktopActions"].includes(
+      getToolName(part)
+    )
     const output =
       screenshot && part.state === "output-available"
         ? (part.output as { screenshot?: unknown; showInChat?: unknown })

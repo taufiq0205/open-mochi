@@ -111,3 +111,17 @@ References: [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox),
 [Docker configuration](https://github.com/opensandbox-group/OpenSandbox/blob/main/server/configuration.md),
 [desktop example](https://github.com/opensandbox-group/OpenSandbox/tree/main/examples/desktop),
 [egress policy](https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/architecture/network/egress.md).
+
+## Batched desktop actions
+
+Direct-chat agents can use `desktopActions` for 1–10 sequential mouse, keyboard,
+scroll or short wait actions in one model tool call. The tool returns a screenshot
+at the end; `showInChat: true` also displays it to the user. Agents inspect the
+screen first and end each batch before a new visual decision is needed. Existing
+single-action tools remain available; group chats still use only memory/handoffs.
+
+Batches share one sandbox connection and cannot interleave with other calls in
+the same tool set. Cancellation is checked between actions. Execution stops on
+failure, but completed actions are not rolled back. Each wait is capped at three
+seconds. The 20-model-step turn limit remains in place; batching reduces the
+round trips needed for known action sequences.
