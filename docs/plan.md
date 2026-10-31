@@ -206,3 +206,34 @@ Implement each service on its named branch when authorized. Integrate completed 
 - Used the installed Vercel `ai-sdk` and `ai-elements` skills, bundled AI SDK 7 tool-part documentation, and official AI Elements Task reference. Reused the existing `Task`/`TaskTrigger`/`TaskContent` components; no dependencies or agent execution settings changed.
 - Routine tool calls in an assistant message share one collapsed activity row, with a live action count/current tool and completed count. Expanding reveals the existing tool detail rows in a bounded scroll area. Failures, denied calls, approval states, error-shaped outputs, explicit shared screenshots and handoff indicators stay outside the collapsed routine activity. Private screenshot bytes remain excluded from rendered tool output.
 - Passed: typecheck, focused ESLint, chat/handoff/render regressions, real Base UI collapsed-render assertions for 20 calls and retained expansion details, live SDK state summary, visible approvals/denials/errors and screenshot privacy checks. Browser automation is unavailable; native browser visual/click verification remains unverified. Production web build passed; the rebuilt local container is healthy with HTTP 200, and its served JS bundle contains the collapsed activity UI and disclosure-state styling. No Git commit or push.
+
+### assistant-ui upgrade — implemented; local checks passed
+
+- Authorized branch: `feature/assistant-ui-upgrade`. Luna subagents at xHigh
+  implemented direct message primitives, copy/welcome controls, group composer
+  adaptation and source/render QA; the parent reviewed and integrated each result.
+- Existing Trigger transport, history/reconnection, group identity/handoffs,
+  tool/screenshot privacy, ownership and desktop behavior are retained. No worker
+  or database changes. Narrow-screen recipient controls reserve send-button space.
+- Real adapter/runtime render checks, AI-chat/group regressions, TypeScript,
+  focused lint and desktop/relay checks pass. Rebuilt Docker web is healthy.
+  Browser send/stream/copy, multiline/Enter, stop, light/dark and 400px layout pass.
+  Remaining live group/suggestion checks are recorded in the
+  [assistant-ui checklist](assistant-ui-plan.md).
+  No commit or push.
+
+### shadcn mira revamp — implemented; local checks passed
+
+- Superseded the assistant-ui upgrade and creative styling above: user found that
+  look too "AI". Applied shadcn preset `b7llrSgu0G` (mira, Inter/Instrument Sans)
+  and removed `@assistant-ui/*`, `workspace.css` and the spotlight card.
+- Chat uses AI SDK `useChat` with shadcn `MessageScroller`, `Message`, `Bubble`,
+  `Marker`, `Trace` and `CodeBlock`; composer is an `InputGroup`. Trigger
+  transport, reconnection, group targeting/handoffs, tool states and screenshot
+  privacy are retained. Failed tool rows open by default.
+- Home is an `Item` list with `Empty` states; sidebar, header and dialogs are back
+  to their plain shadcn versions. TypeScript, lint (new files) and offline chat,
+  workspace, sidebar, group, bot and search checks pass. Browser verification of
+  send/stream/stop, group picker and dark mode is pending. No commit or push.
+- Group bots no longer hand off for job fit, only for missing context; handoffs
+  carry a short reason shown in the divider. Worker 20261031.2 deployed locally.
