@@ -85,7 +85,7 @@ docker compose logs --tail=100 web trigger-webapp
 
 ## Architecture
 
-![open-mochi architecture: setup, chat execution, and desktop access](docs/project-architecture.png)
+![open-mochi architecture: setup, chat execution, batched desktop actions, and desktop access](docs/project-architecture.png)
 
 [Open SVG](docs/project-architecture.svg) ·
 [Edit in Excalidraw](docs/project-architecture.excalidraw)
